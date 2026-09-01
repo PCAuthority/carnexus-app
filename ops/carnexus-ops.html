@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>CarNexus Ops</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#12151C">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#12151C; --panel:#1B1F27; --steel:#3A4556; --amber:#CC8B3C; --teal:#2FB6A6;
+  --paper:#F5F6F3; --paper-dim:#EDEEE9; --line:#DADCD5; --text:#20242A; --muted:#5B6169;
+  --ok:#2F8F63; --err:#B4432B;
+  --font-display:'Space Grotesk', system-ui, sans-serif;
+  --font-body:'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;}
+body{
+  margin:0;background:var(--ink);color:var(--text);font-family:var(--font-body);
+  display:flex;justify-content:center;
+}
+button{font-family:inherit;cursor:pointer;}
+h1,h2,h3{font-family:var(--font-display);font-weight:700;margin:0;color:var(--ink);}
+
+.app{
+  width:100%;max-width:460px;min-height:100vh;background:var(--paper);
+  display:flex;flex-direction:column;position:relative;
+}
+
+/* ---- top bar ---- */
+.topbar{
+  background:var(--ink);color:var(--paper);padding:16px 18px;
+  display:flex;align-items:center;justify-content:space-between;
+  position:sticky;top:0;z-index:20;border-bottom:3px solid var(--amber);
+}
+.topbar .brand{display:flex;align-items:center;gap:8px;font-family:var(--font-display);font-size:1.15rem;font-weight:700;}
+.brand .node{width:8px;height:8px;border-radius:50%;background:var(--teal);}
+.topbar .role-tag{font-size:0.72rem;background:rgba(255,255,255,0.1);padding:4px 9px;border-radius:10px;}
+.logout-btn{background:transparent;border:none;color:#B7BCC4;font-size:0.78rem;font-weight:600;}
+
+/* ---- screen content ---- */
+.screen{flex:1;padding:18px 18px 90px;overflow-y:auto;}
+.screen.hidden{display:none;}
+
+/* role picker */
+.role-picker{padding:40px 24px;text-align:center;}
+.role-picker .node-hero{width:64px;height:64px;border-radius:16px;background:var(--panel);margin:0 auto 18px;display:flex;align-items:center;justify-content:center;}
+.role-picker h1{font-size:1.6rem;color:var(--paper);}
+.role-picker p{color:#9BA3AC;font-size:0.92rem;margin-top:8px;}
+.role-cards{display:flex;flex-direction:column;gap:12px;margin-top:26px;}
+.role-card{
+  background:var(--panel);border:1.5px solid #2A3140;border-radius:8px;padding:18px;text-align:left;
+  color:var(--paper);
+}
+.role-card b{font-family:var(--font-display);font-size:1.05rem;display:block;}
+.role-card span{font-size:0.85rem;color:#9BA3AC;}
+
+/* login forms */
+.login-wrap{padding:30px 6px;}
+.login-wrap h2{font-size:1.4rem;}
+.login-wrap p.sub{color:var(--muted);font-size:0.88rem;margin-top:6px;}
+.field{display:flex;flex-direction:column;gap:6px;margin-top:16px;}
+label{font-size:0.8rem;font-weight:600;color:var(--ink);}
+input,select{width:100%;border:1.5px solid var(--line);border-radius:6px;padding:13px 14px;font-family:inherit;font-size:1rem;background:#fff;color:var(--text);}
+input:focus,select:focus{outline:2px solid var(--amber);outline-offset:1px;border-color:var(--amber);}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:14px;border-radius:7px;font-weight:700;font-size:0.95rem;border:2px solid var(--ink);background:var(--ink);color:var(--paper);margin-top:18px;}
+.btn.secondary{background:transparent;color:var(--ink);}
+.btn.ghost{background:transparent;color:var(--muted);border-color:var(--line);}
+.btn.small{padding:9px 12px;font-size:0.82rem;width:auto;margin-top:0;}
+.btn:disabled{opacity:0.5;}
+.status-msg{font-size:0.86rem;padding:10px 12px;border-radius:6px;margin-top:14px;display:none;}
+.status-msg.show{display:block;}
+.status-msg.success{background:#E5F1EA;color:var(--ok);}
+.status-msg.error{background:#F7E5E0;color:var(--err);}
+
+/* stats */
+.stat-row{display:flex;gap:10px;margin-bottom:16px;}
+.stat{flex:1;background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 14px;}
+.stat .num{font-family:var(--font-display);font-size:1.5rem;}
+.stat .lbl{font-size:0.7rem;color:var(--muted);}
+
+/* filter chips */
+.chip-row{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:14px;}
+.chip{flex:0 0 auto;padding:7px 14px;border-radius:14px;border:1.5px solid var(--line);background:#fff;font-size:0.8rem;font-weight:600;color:var(--muted);}
+.chip.active{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+
+/* booking cards */
+.job-card{background:#fff;border:1px solid var(--line);border-left:5px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:12px;}
+.job-card.assigned{border-left-color:var(--teal);}
+.job-card.pending{border-left-color:var(--amber);}
+.job-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+.job-title{font-weight:700;font-size:0.98rem;}
+.job-badge{font-size:0.68rem;font-weight:700;padding:3px 9px;border-radius:10px;background:var(--paper-dim);color:var(--ink);white-space:nowrap;text-transform:capitalize;}
+.job-badge.pending{background:var(--amber);color:var(--ink);}
+.job-badge.assigned{background:var(--teal);color:#08302B;}
+.job-meta{font-size:0.83rem;color:var(--muted);margin-top:5px;}
+.job-note{font-size:0.83rem;color:var(--muted);margin-top:5px;font-style:italic;}
+.assign-row{margin-top:12px;display:flex;gap:8px;}
+.assign-row select{flex:1;font-size:0.85rem;padding:10px;}
+.job-actions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;}
+.empty-state{padding:26px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:8px;font-size:0.9rem;}
+
+/* fleet list */
+.fleet-card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:12px;}
+
+/* bottom nav */
+.bottom-nav{
+  position:sticky;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);
+  display:flex;z-index:20;padding-bottom:env(safe-area-inset-bottom);
+}
+.nav-btn{flex:1;padding:11px 4px 9px;display:flex;flex-direction:column;align-items:center;gap:3px;background:transparent;border:none;color:var(--muted);font-size:0.68rem;font-weight:600;}
+.nav-btn .ico{width:20px;height:20px;border-radius:5px;background:var(--paper-dim);display:flex;align-items:center;justify-content:center;font-size:0.85rem;}
+.nav-btn.active{color:var(--ink);}
+.nav-btn.active .ico{background:var(--amber);}
+
+.toast-wrap{position:fixed;bottom:76px;left:50%;transform:translateX(-50%);z-index:200;display:flex;flex-direction:column;gap:8px;width:calc(100% - 40px);max-width:420px;}
+.toast{background:var(--ink);color:var(--paper);padding:12px 16px;border-radius:8px;border-left:4px solid var(--amber);box-shadow:0 8px 22px rgba(0,0,0,0.25);font-size:0.84rem;animation:slidein .25s ease;}
+@keyframes slidein{from{transform:translateY(10px);opacity:0;}to{transform:translateY(0);opacity:1;}}
+
+.install-note{font-size:0.72rem;color:#9BA3AC;text-align:center;padding:10px 20px 0;}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- ============ ROLE PICKER ============ -->
+  <div class="screen" id="screen-role">
+    <div class="role-picker">
+      <div class="node-hero">
+        <svg width="30" height="30" viewBox="0 0 30 30"><circle cx="15" cy="15" r="5" fill="#CC8B3C"/><circle cx="5" cy="5" r="3" fill="#2FB6A6"/><circle cx="25" cy="5" r="3" fill="#2FB6A6"/><circle cx="15" cy="26" r="3" fill="#2FB6A6"/><line x1="15" y1="15" x2="5" y2="5" stroke="#3A4556" stroke-width="1.5"/><line x1="15" y1="15" x2="25" y2="5" stroke="#3A4556" stroke-width="1.5"/><line x1="15" y1="15" x2="15" y2="26" stroke="#3A4556" stroke-width="1.5"/></svg>
+      </div>
+      <h1>CarNexus Ops</h1>
+      <p>Sign in to manage bookings on the go.</p>
+      <div class="role-cards">
+        <button class="role-card" data-role="owner"><b>I'm a car owner</b><span>See bookings assigned to you</span></button>
+        <button class="role-card" data-role="admin"><b>I'm the admin</b><span>Review requests and assign the nearest car</span></button>
+      </div>
+    </div>
+    <p class="install-note">Tip: open this page in your phone's browser, then use "Add to Home Screen" to install it like an app.</p>
+  </div>
+
+  <!-- ============ OWNER LOGIN ============ -->
+  <div class="screen hidden" id="screen-owner-login">
+    <div class="login-wrap">
+      <h2>Owner sign in</h2>
+      <p class="sub">Enter the email or phone you registered with on CarNexus.</p>
+      <div class="field"><label>Email or phone</label><input id="owner-login-input" placeholder="you@email.com or 09xx xxx xxxx"></div>
+      <button class="btn" id="owner-login-btn">Sign in</button>
+      <button class="btn ghost" data-back="role">Back</button>
+      <div class="status-msg" id="owner-login-status"></div>
+    </div>
+  </div>
+
+  <!-- ============ ADMIN LOGIN ============ -->
+  <div class="screen hidden" id="screen-admin-login">
+    <div class="login-wrap">
+      <h2>Admin sign in</h2>
+      <p class="sub">Enter the CarNexus admin passcode.</p>
+      <div class="field"><label>Passcode</label><input id="admin-login-input" type="password" placeholder="Passcode"></div>
+      <button class="btn" id="admin-login-btn">Sign in</button>
+      <button class="btn ghost" data-back="role">Back</button>
+      <div class="status-msg" id="admin-login-status"></div>
+      <p style="font-size:0.72rem;color:var(--muted);margin-top:14px;">Default passcode is <b>carnexus2026</b> — change ADMIN_PASSCODE in the code before real use.</p>
+    </div>
+  </div>
+
+  <!-- ============ OWNER HOME ============ -->
+  <div class="screen hidden" id="screen-owner-home">
+    <div class="stat-row" id="owner-stats"></div>
+    <h3 style="font-size:1.05rem;margin-bottom:10px;">Your assigned bookings</h3>
+    <div id="owner-job-list"></div>
+  </div>
+
+  <!-- ============ ADMIN REQUESTS ============ -->
+  <div class="screen hidden" id="screen-admin-requests">
+    <div class="stat-row" id="admin-stats"></div>
+    <div class="chip-row" id="admin-filter-chips">
+      <button class="chip active" data-status="all">All</button>
+      <button class="chip" data-status="pending">Pending</button>
+      <button class="chip" data-status="assigned">Assigned</button>
+      <button class="chip" data-status="contacted">Contacted</button>
+      <button class="chip" data-status="fulfilled">Fulfilled</button>
+    </div>
+    <div id="admin-job-list"></div>
+  </div>
+
+  <!-- ============ ADMIN FLEET ============ -->
+  <div class="screen hidden" id="screen-admin-fleet">
+    <h3 style="font-size:1.05rem;margin-bottom:10px;">Registered car owners</h3>
+    <div id="admin-fleet-list"></div>
+  </div>
+
+  <!-- ============ BOTTOM NAV (owner) ============ -->
+  <div class="bottom-nav hidden" id="nav-owner">
+    <button class="nav-btn active" data-goto="owner-home"><span class="ico">🚗</span>Bookings</button>
+    <button class="nav-btn" id="owner-refresh-btn"><span class="ico">↻</span>Refresh</button>
+    <button class="nav-btn" id="owner-logout-btn"><span class="ico">⏻</span>Sign out</button>
+  </div>
+
+  <!-- ============ BOTTOM NAV (admin) ============ -->
+  <div class="bottom-nav hidden" id="nav-admin">
+    <button class="nav-btn active" data-goto="admin-requests"><span class="ico">📋</span>Requests</button>
+    <button class="nav-btn" data-goto="admin-fleet"><span class="ico">🚙</span>Fleet</button>
+    <button class="nav-btn" id="admin-refresh-btn"><span class="ico">↻</span>Refresh</button>
+    <button class="nav-btn" id="admin-logout-btn"><span class="ico">⏻</span>Sign out</button>
+  </div>
+
+</div>
+
+<div class="toast-wrap" id="toast-wrap"></div>
+
+<script>
+/* ================= CONFIG ================= */
+const ADMIN_PASSCODE = "carnexus2026"; // change before real use
+
+/* ================= HELPERS ================= */
+function uid(){ return Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8); }
+function haversineKm(lat1,lon1,lat2,lon2){
+  const R=6371, dLat=(lat2-lat1)*Math.PI/180, dLon=(lon2-lon1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+function fmtKm(km){ return km==null ? "—" : (km<1 ? Math.round(km*1000)+" m" : km.toFixed(1)+" km"); }
+function escapeHtml(s){ return (s||"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function showStatus(el, msg, kind){ el.textContent = msg; el.className = "status-msg show "+kind; }
+function showToast(msg){
+  const wrap = document.getElementById("toast-wrap");
+  const t = document.createElement("div"); t.className="toast"; t.textContent = msg;
+  wrap.appendChild(t); setTimeout(()=>t.remove(), 6000);
+  if (window.Notification && Notification.permission === "granted"){ try{ new Notification("CarNexus Ops", {body: msg}); }catch(e){} }
+}
+function requestNotifyPermission(){
+  if (window.Notification && Notification.permission === "default"){ Notification.requestPermission().catch(()=>{}); }
+}
+
+/* ================= STORAGE (shared with main CarNexus site) ================= */
+async function saveRecord(prefix, record){ await window.storage.set(prefix+record.id, JSON.stringify(record), true); }
+async function listRecords(prefix){
+  try{
+    const res = await window.storage.list(prefix, true);
+    if (!res || !res.keys) return [];
+    const out = [];
+    for (const key of res.keys){
+      try{ const r = await window.storage.get(key, true); if (r && r.value) out.push(JSON.parse(r.value)); }catch(e){}
+    }
+    return out;
+  }catch(e){ return []; }
+}
+async function getOwners(){ return listRecords("owners:"); }
+async function getBookings(){ return listRecords("bookings:"); }
+
+/* ================= SCREEN ROUTING ================= */
+const screens = document.querySelectorAll(".screen");
+function showScreen(id){ screens.forEach(s=>s.classList.toggle("hidden", s.id!==("screen-"+id))); }
+document.querySelectorAll("[data-back]").forEach(b=>b.addEventListener("click", ()=>showScreen(b.dataset.back)));
+
+document.querySelectorAll(".role-card").forEach(c=>{
+  c.addEventListener("click", ()=> showScreen(c.dataset.role+"-login"));
+});
+
+/* ================= OWNER FLOW ================= */
+let currentOwnerRecord = null;
+let ownerSeenIds = new Set();
+let ownerPollTimer = null;
+
+document.getElementById("owner-login-btn").addEventListener("click", async ()=>{
+  const input = document.getElementById("owner-login-input").value.trim().toLowerCase();
+  const statusEl = document.getElementById("owner-login-status");
+  if (!input){ showStatus(statusEl, "Enter the email or phone you registered with.", "error"); return; }
+  const owners = await getOwners();
+  const match = owners.find(o => o.email.toLowerCase()===input || o.phone.toLowerCase()===input);
+  if (!match){ showStatus(statusEl, "No car owner found with that email or phone. Register on the CarNexus site first.", "error"); return; }
+  currentOwnerRecord = match;
+  statusEl.classList.remove("show");
+  requestNotifyPermission();
+  document.getElementById("nav-admin").classList.add("hidden");
+  document.getElementById("nav-owner").classList.remove("hidden");
+  showScreen("owner-home");
+  await renderOwnerHome();
+  if (ownerPollTimer) clearInterval(ownerPollTimer);
+  ownerPollTimer = setInterval(()=>renderOwnerHome(true), 20000);
+});
+
+document.getElementById("owner-refresh-btn").addEventListener("click", ()=>renderOwnerHome());
+document.getElementById("owner-logout-btn").addEventListener("click", ()=>{
+  currentOwnerRecord = null; ownerSeenIds = new Set();
+  if (ownerPollTimer) clearInterval(ownerPollTimer);
+  document.getElementById("nav-owner").classList.add("hidden");
+  document.getElementById("owner-login-input").value = "";
+  showScreen("role");
+});
+
+async function renderOwnerHome(isPoll){
+  if (!currentOwnerRecord) return;
+  const bookings = await getBookings();
+  const mine = bookings.filter(b => b.assignedOwnerId === currentOwnerRecord.id)
+                        .sort((a,b)=>b.createdAt-a.createdAt);
+
+  if (isPoll){
+    const fresh = mine.filter(b=>!ownerSeenIds.has(b.id));
+    fresh.forEach(b=> showToast("New booking assigned to you: "+b.name+" — "+b.startDate+" to "+b.endDate));
+  }
+  mine.forEach(b=>ownerSeenIds.add(b.id));
+
+  document.getElementById("owner-stats").innerHTML =
+    statBlock(mine.length, "Assigned to you") +
+    statBlock(mine.filter(b=>b.status==="fulfilled").length, "Completed");
+
+  const listEl = document.getElementById("owner-job-list");
+  listEl.innerHTML = mine.length ? mine.map(b=>`
+    <div class="job-card ${b.status}">
+      <div class="job-top">
+        <span class="job-title">${escapeHtml(b.name)} — ${escapeHtml(b.vanType)}</span>
+        <span class="job-badge ${b.status}">${b.status}</span>
+      </div>
+      <div class="job-meta">📍 ${escapeHtml(b.pickupText)}</div>
+      <div class="job-meta">🗓 ${b.startDate} → ${b.endDate}</div>
+      <div class="job-meta">☎ ${escapeHtml(b.phone)} · ${escapeHtml(b.email)}</div>
+      ${b.notes ? `<div class="job-note">"${escapeHtml(b.notes)}"</div>` : ""}
+    </div>`).join("") : '<div class="empty-state">No bookings assigned to you yet. New assignments will show up here.</div>';
+}
+function statBlock(num,label){ return `<div class="stat"><div class="num">${num}</div><div class="lbl">${label}</div></div>`; }
+
+/* ================= ADMIN FLOW ================= */
+let adminUnlocked = false;
+let adminSeenIds = new Set();
+let adminPollTimer = null;
+let adminFilter = "all";
+let ownersCache = [];
+let bookingsCache = [];
+
+document.getElementById("admin-login-btn").addEventListener("click", async ()=>{
+  const pass = document.getElementById("admin-login-input").value;
+  const statusEl = document.getElementById("admin-login-status");
+  if (pass !== ADMIN_PASSCODE){ showStatus(statusEl, "Incorrect passcode.", "error"); return; }
+  adminUnlocked = true;
+  statusEl.classList.remove("show");
+  requestNotifyPermission();
+  document.getElementById("nav-owner").classList.add("hidden");
+  document.getElementById("nav-admin").classList.remove("hidden");
+  showScreen("admin-requests");
+  await renderAdmin();
+  if (adminPollTimer) clearInterval(adminPollTimer);
+  adminPollTimer = setInterval(()=>renderAdmin(true), 20000);
+});
+
+document.getElementById("admin-refresh-btn").addEventListener("click", ()=>renderAdmin());
+document.getElementById("admin-logout-btn").addEventListener("click", ()=>{
+  adminUnlocked = false; adminSeenIds = new Set();
+  if (adminPollTimer) clearInterval(adminPollTimer);
+  document.getElementById("nav-admin").classList.add("hidden");
+  document.getElementById("admin-login-input").value = "";
+  showScreen("role");
+});
+
+document.querySelectorAll("#nav-admin [data-goto]").forEach(b=>{
+  b.addEventListener("click", ()=>{
+    document.querySelectorAll("#nav-admin .nav-btn").forEach(x=>x.classList.remove("active"));
+    b.classList.add("active");
+    showScreen(b.dataset.goto);
+  });
+});
+document.querySelectorAll("#admin-filter-chips .chip").forEach(c=>{
+  c.addEventListener("click", ()=>{
+    document.querySelectorAll("#admin-filter-chips .chip").forEach(x=>x.classList.remove("active"));
+    c.classList.add("active");
+    adminFilter = c.dataset.status;
+    renderAdminJobList();
+  });
+});
+
+async function renderAdmin(isPoll){
+  const [bookings, owners] = await Promise.all([getBookings(), getOwners()]);
+  bookingsCache = bookings.sort((a,b)=>b.createdAt-a.createdAt);
+  ownersCache = owners;
+
+  if (isPoll){
+    const fresh = bookingsCache.filter(b=>!adminSeenIds.has(b.id));
+    fresh.forEach(b=> showToast("New booking request from "+b.name+"."));
+  }
+  bookingsCache.forEach(b=>adminSeenIds.add(b.id));
+
+  document.getElementById("admin-stats").innerHTML =
+    statBlock(bookingsCache.length, "Total") +
+    statBlock(bookingsCache.filter(b=>b.status==="pending").length, "Pending") +
+    statBlock(ownersCache.length, "Fleet");
+
+  renderAdminJobList();
+  renderAdminFleetList();
+}
+
+function nearestOwnersFor(booking){
+  return ownersCache.map(o=>{
+    let d = null;
+    if (booking.lat != null && o.lat != null) d = haversineKm(booking.lat, booking.lng, o.lat, o.lng);
+    return {owner:o, d};
+  }).sort((a,b)=>{
+    if (a.d==null && b.d==null) return a.owner.name.localeCompare(b.owner.name);
+    if (a.d==null) return 1;
+    if (b.d==null) return -1;
+    return a.d - b.d;
+  });
+}
+
+function renderAdminJobList(){
+  const listEl = document.getElementById("admin-job-list");
+  const filtered = adminFilter==="all" ? bookingsCache : bookingsCache.filter(b=>b.status===adminFilter);
+  if (!filtered.length){
+    listEl.innerHTML = '<div class="empty-state">No bookings in this view.</div>';
+    return;
+  }
+  listEl.innerHTML = filtered.map(b=>{
+    const ranked = nearestOwnersFor(b);
+    const options = ranked.map(r=>
+      `<option value="${r.owner.id}" ${b.assignedOwnerId===r.owner.id?"selected":""}>${escapeHtml(r.owner.name)} — ${escapeHtml(r.owner.vanModel)} (${fmtKm(r.d)})</option>`
+    ).join("");
+    return `
+    <div class="job-card ${b.status}" data-booking="${b.id}">
+      <div class="job-top">
+        <span class="job-title">${escapeHtml(b.name)} — ${escapeHtml(b.vanType)}</span>
+        <span class="job-badge ${b.status}">${b.status}</span>
+      </div>
+      <div class="job-meta">📍 ${escapeHtml(b.pickupText)}</div>
+      <div class="job-meta">🗓 ${b.startDate} → ${b.endDate}</div>
+      <div class="job-meta">☎ ${escapeHtml(b.phone)} · ${escapeHtml(b.email)}</div>
+      ${b.notes ? `<div class="job-note">"${escapeHtml(b.notes)}"</div>` : ""}
+      ${b.assignedOwnerName ? `<div class="job-meta"><b>Assigned to ${escapeHtml(b.assignedOwnerName)}</b></div>` : ""}
+      <div class="assign-row">
+        <select class="assign-select" ${ranked.length===0 ? "disabled":""}>
+          <option value="">${ranked.length ? "Choose nearest car…" : "No cars registered yet"}</option>
+          ${options}
+        </select>
+        <button class="btn small assign-btn" ${ranked.length===0 ? "disabled":""}>Assign</button>
+      </div>
+      <div class="job-actions">
+        <button class="btn secondary small mark-btn" data-status="contacted">Mark contacted</button>
+        <button class="btn secondary small mark-btn" data-status="fulfilled">Mark fulfilled</button>
+      </div>
+    </div>`;
+  }).join("");
+
+  listEl.querySelectorAll(".job-card").forEach(card=>{
+    const bookingId = card.dataset.booking;
+    card.querySelector(".assign-btn").addEventListener("click", async ()=>{
+      const select = card.querySelector(".assign-select");
+      const ownerId = select.value;
+      if (!ownerId) return;
+      const owner = ownersCache.find(o=>o.id===ownerId);
+      const booking = bookingsCache.find(b=>b.id===bookingId);
+      if (!owner || !booking) return;
+      booking.assignedOwnerId = owner.id;
+      booking.assignedOwnerName = owner.name;
+      booking.status = "assigned";
+      const btn = card.querySelector(".assign-btn");
+      btn.disabled = true; btn.textContent = "Assigning…";
+      try{
+        await saveRecord("bookings:", booking);
+        showToast("Assigned "+booking.name+"'s booking to "+owner.name+".");
+        await renderAdmin();
+      }catch(e){ btn.disabled = false; btn.textContent = "Assign"; }
+    });
+    card.querySelectorAll(".mark-btn").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        const booking = bookingsCache.find(b=>b.id===bookingId);
+        if (!booking) return;
+        booking.status = btn.dataset.status;
+        btn.disabled = true;
+        try{ await saveRecord("bookings:", booking); await renderAdmin(); }
+        catch(e){ btn.disabled = false; }
+      });
+    });
+  });
+}
+
+function renderAdminFleetList(){
+  const el = document.getElementById("admin-fleet-list");
+  el.innerHTML = ownersCache.length ? ownersCache.slice().sort((a,b)=>b.createdAt-a.createdAt).map(o=>`
+    <div class="fleet-card">
+      <div class="job-top">
+        <span class="job-title">${escapeHtml(o.name)} — ${escapeHtml(o.vanModel)}</span>
+        <span class="job-badge">${escapeHtml(o.vanType)}</span>
+      </div>
+      <div class="job-meta">📍 ${escapeHtml(o.locationText)} ${o.lat!=null ? "(located)" : "(no coordinates)"} · radius ${o.radiusKm} km</div>
+      <div class="job-meta">☎ ${escapeHtml(o.phone)} · ${escapeHtml(o.email)} · ₱${o.rate}/day · ${o.seats} seats</div>
+    </div>`).join("") : '<div class="empty-state">No car owners registered yet.</div>';
+}
+
+/* ================= OPTIONAL: SERVICE WORKER (only works once hosted on a real https domain) ================= */
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")){
+  navigator.serviceWorker.register("sw.js").catch(()=>{ /* fine if this fails in preview */ });
+}
+</script>
+</body>
+</html>

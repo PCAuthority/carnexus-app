@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CarNexus — Car Rental</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#12151C;
+  --panel:#1B1F27;
+  --steel:#3A4556;
+  --amber:#CC8B3C;
+  --teal:#2FB6A6;
+  --paper:#F5F6F3;
+  --paper-dim:#EDEEE9;
+  --line:#DADCD5;
+  --text:#20242A;
+  --muted:#5B6169;
+  --ok:#2F8F63;
+  --err:#B4432B;
+  --font-display:'Space Grotesk', system-ui, sans-serif;
+  --font-body:'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{margin:0;background:var(--paper);color:var(--text);font-family:var(--font-body);line-height:1.55;}
+button{font-family:inherit;cursor:pointer;}
+h1,h2,h3{font-family:var(--font-display);font-weight:700;margin:0;color:var(--ink);}
+
+/* ---- NAV ---- */
+.nav{position:sticky;top:0;z-index:50;background:var(--ink);border-bottom:3px solid var(--amber);}
+.nav-inner{max-width:1140px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;}
+.logo{display:flex;align-items:center;gap:9px;font-family:var(--font-display);font-size:1.4rem;color:var(--paper);font-weight:700;}
+.logo .node{width:9px;height:9px;border-radius:50%;background:var(--teal);box-shadow:0 0 0 4px rgba(47,182,166,0.18);}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;}
+.tab-btn{background:transparent;border:none;color:#B7BCC4;padding:8px 14px;border-radius:3px;font-size:0.9rem;font-weight:600;transition:background .15s,color .15s;}
+.tab-btn:hover{background:rgba(255,255,255,0.08);}
+.tab-btn.active{background:var(--amber);color:var(--ink);}
+
+.wrap{max-width:1140px;margin:0 auto;padding:0 24px;}
+.view{display:none;}
+.view.active{display:block;}
+
+/* ---- HERO ---- */
+.hero{padding:64px 0 40px;display:grid;grid-template-columns:1.05fr 0.95fr;gap:44px;align-items:center;}
+.hero h1{font-size:clamp(2.4rem,4.6vw,3.7rem);line-height:1.04;}
+.hero p.lede{max-width:48ch;font-size:1.05rem;color:var(--muted);margin-top:16px;}
+.hero-ctas{display:flex;gap:12px;margin-top:26px;flex-wrap:wrap;}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:12px 22px;border-radius:3px;font-weight:700;font-size:0.93rem;border:2px solid var(--ink);background:var(--ink);color:var(--paper);transition:transform .12s;}
+.btn:hover{transform:translateY(-1px);}
+.btn.secondary{background:transparent;color:var(--ink);}
+.btn.amber{background:var(--amber);border-color:var(--amber);color:var(--ink);}
+.btn.small{padding:8px 14px;font-size:0.84rem;}
+.btn:disabled{opacity:0.5;cursor:not-allowed;transform:none;}
+
+.hub-panel{background:var(--ink);border-radius:8px;padding:22px;min-height:270px;}
+.hub-panel svg{width:100%;height:250px;display:block;}
+.hub-caption{color:#9BA3AC;font-size:0.8rem;margin-top:8px;}
+.pulse{animation:pulse 1.9s ease-in-out infinite;}
+@keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.3;}}
+.flow{stroke-dasharray:5 5;animation:march 1.3s linear infinite;}
+@keyframes march{to{stroke-dashoffset:-20;}}
+
+/* ---- HOW IT WORKS ---- */
+.how{padding:16px 0 60px;border-top:1px solid var(--line);margin-top:16px;}
+.how h2{font-size:1.75rem;margin-bottom:22px;}
+.how-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;}
+.how-card{background:#fff;border:1px solid var(--line);border-radius:5px;padding:20px;}
+.how-card .mark{font-family:var(--font-display);font-size:1.5rem;color:var(--teal);}
+.how-card h3{font-size:1.02rem;margin:10px 0 6px;}
+.how-card p{font-size:0.92rem;color:var(--muted);margin:0;}
+
+.section-head{padding:44px 0 6px;}
+.section-head h2{font-size:2.1rem;}
+.section-head p{color:var(--muted);max-width:62ch;margin-top:8px;}
+
+.card{background:#fff;border:1px solid var(--line);border-radius:6px;padding:28px;margin:22px 0 60px;}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px 20px;}
+.field{display:flex;flex-direction:column;gap:6px;}
+.field.full{grid-column:1/-1;}
+label{font-size:0.8rem;font-weight:600;color:var(--ink);}
+input,select,textarea{border:1.5px solid var(--line);border-radius:3px;padding:10px 12px;font-family:inherit;font-size:0.95rem;background:var(--paper-dim);color:var(--text);}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--amber);outline-offset:1px;border-color:var(--amber);}
+textarea{resize:vertical;min-height:70px;}
+.loc-row{display:flex;gap:8px;align-items:center;}
+.loc-row input{flex:1;}
+.coord-note{font-size:0.78rem;color:var(--muted);}
+.coord-note.ok{color:var(--ok);font-weight:600;}
+.form-actions{display:flex;align-items:center;gap:14px;margin-top:18px;}
+.status-msg{font-size:0.9rem;padding:10px 14px;border-radius:4px;margin-top:16px;display:none;}
+.status-msg.show{display:block;}
+.status-msg.success{background:#E5F1EA;color:var(--ok);border:1px solid #BEDDC9;}
+.status-msg.error{background:#F7E5E0;color:var(--err);border:1px solid #EBC0B4;}
+.confirm-card{margin-top:16px;padding:16px;border-radius:4px;background:var(--paper-dim);border:1px dashed var(--steel);display:none;}
+.confirm-card.show{display:block;}
+
+footer{border-top:1px solid var(--line);padding:30px 0 60px;color:var(--muted);font-size:0.85rem;}
+footer .note{background:var(--paper-dim);border-radius:5px;padding:14px 18px;margin-top:14px;}
+
+@media (max-width:820px){
+  .hero{grid-template-columns:1fr;}
+  .form-grid{grid-template-columns:1fr;}
+  .how-grid{grid-template-columns:1fr;}
+}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-inner">
+    <div class="logo"><span class="node"></span>CarNexus</div>
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="home">Home</button>
+      <button class="tab-btn" data-tab="book">Book a Car</button>
+      <button class="tab-btn" data-tab="owner">List Your Car</button>
+    </div>
+  </div>
+</nav>
+
+<div class="wrap">
+
+  <!-- HOME -->
+  <section class="view active" id="view-home">
+    <div class="hero">
+      <div>
+        <h1>Request a car. We line up the right one.</h1>
+        <p class="lede">Tell us your trip and pickup point. Our team checks availability across the fleet and assigns you a confirmed car — no guessing which listing is actually free.</p>
+        <div class="hero-ctas">
+          <button class="btn amber" data-goto="book">Book a car</button>
+          <button class="btn secondary" data-goto="owner">List your car</button>
+        </div>
+      </div>
+      <div class="hub-panel">
+        <svg viewBox="0 0 360 240">
+          <circle cx="55" cy="120" r="7" fill="#2FB6A6"/>
+          <text x="70" y="110" fill="#D7DAE0" font-size="12" font-family="IBM Plex Sans">Renter request</text>
+          <line x1="55" y1="120" x2="180" y2="120" stroke="#CC8B3C" stroke-width="2.5" class="flow"/>
+          <circle cx="180" cy="120" r="10" fill="#CC8B3C" class="pulse"/>
+          <text x="150" y="145" fill="#D7DAE0" font-size="12" font-family="IBM Plex Sans">CarNexus HQ</text>
+          <line x1="190" y1="112" x2="300" y2="55" stroke="#3A4556" stroke-width="2"/>
+          <line x1="190" y1="120" x2="300" y2="120" stroke="#3A4556" stroke-width="2"/>
+          <line x1="190" y1="128" x2="300" y2="185" stroke="#3A4556" stroke-width="2"/>
+          <circle cx="300" cy="55" r="6" fill="#5B6169"/>
+          <circle cx="300" cy="120" r="6" fill="#5B6169"/>
+          <circle cx="300" cy="185" r="6" fill="#5B6169"/>
+          <text x="260" y="42" fill="#8B929C" font-size="10" font-family="IBM Plex Sans">Fleet</text>
+        </svg>
+        <div class="hub-caption">Every request routes through CarNexus HQ before a car is assigned.</div>
+      </div>
+    </div>
+
+    <div class="how">
+      <h2>How CarNexus works</h2>
+      <div class="how-grid">
+        <div class="how-card">
+          <div class="mark">1</div>
+          <h3>You send a request</h3>
+          <p>Trip dates, pickup location, and the type of car you need — that's all we need to start.</p>
+        </div>
+        <div class="how-card">
+          <div class="mark">2</div>
+          <h3>Our team checks the fleet</h3>
+          <p>We review which registered cars are closest and actually available before anything is confirmed.</p>
+        </div>
+        <div class="how-card">
+          <div class="mark">3</div>
+          <h3>You get a confirmed car</h3>
+          <p>Once we assign your booking, both you and the car owner receive the confirmed details.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BOOK A CAR -->
+  <section class="view" id="view-book">
+    <div class="section-head">
+      <h2>Book a car</h2>
+      <p>Fill in your trip details. Add a pickup location so our team can line up the closest available car.</p>
+    </div>
+    <div class="card">
+      <form id="booking-form">
+        <div class="form-grid">
+          <div class="field"><label>Full name</label><input required name="name" placeholder="Juana Dela Cruz"></div>
+          <div class="field"><label>Phone number</label><input required name="phone" placeholder="09xx xxx xxxx"></div>
+          <div class="field"><label>Email</label><input required type="email" name="email" placeholder="you@email.com"></div>
+          <div class="field"><label>Car type needed</label>
+            <select name="carType">
+              <option>Sedan</option>
+              <option>SUV</option>
+              <option>Pickup truck</option>
+              <option>Passenger van</option>
+              <option>Luxury / premium</option>
+            </select>
+          </div>
+          <div class="field full">
+            <label>Pickup location</label>
+            <div class="loc-row">
+              <input name="pickupText" placeholder="e.g. Barangay Linao, General Santos City" required>
+              <button type="button" class="btn secondary small" id="book-geo-btn">Use my location</button>
+            </div>
+            <span class="coord-note" id="book-coord-note">No precise coordinates yet — typing an address still works fine.</span>
+          </div>
+          <div class="field"><label>Pickup date</label><input required type="date" name="startDate"></div>
+          <div class="field"><label>Return date</label><input required type="date" name="endDate"></div>
+          <div class="field full"><label>Anything we should know?</label><textarea name="notes" placeholder="Passenger count, luggage, route plan, etc."></textarea></div>
+        </div>
+        <div class="form-actions">
+          <button class="btn amber" type="submit" id="book-submit-btn">Send booking request</button>
+        </div>
+        <div class="status-msg" id="book-status"></div>
+        <div class="confirm-card" id="book-confirm"></div>
+      </form>
+    </div>
+  </section>
+
+  <!-- LIST YOUR CAR -->
+  <section class="view" id="view-owner">
+    <div class="section-head">
+      <h2>List your car</h2>
+      <p>Register once. Our team will reach out through your CarNexus Owner app whenever a booking is assigned to you.</p>
+    </div>
+    <div class="card">
+      <form id="owner-form">
+        <div class="form-grid">
+          <div class="field"><label>Full name</label><input required name="name" placeholder="Owner's name"></div>
+          <div class="field"><label>Phone number</label><input required name="phone" placeholder="09xx xxx xxxx"></div>
+          <div class="field"><label>Email</label><input required type="email" name="email" placeholder="you@email.com"></div>
+          <div class="field"><label>Car make &amp; model</label><input required name="vanModel" placeholder="e.g. Toyota Fortuner"></div>
+          <div class="field"><label>Car type</label>
+            <select name="vanType">
+              <option>Sedan</option>
+              <option>SUV</option>
+              <option>Pickup truck</option>
+              <option>Passenger van</option>
+              <option>Luxury / premium</option>
+            </select>
+          </div>
+          <div class="field"><label>Seats / capacity</label><input required type="number" min="1" name="seats" placeholder="5"></div>
+          <div class="field"><label>Daily rate (₱)</label><input required type="number" min="0" name="rate" placeholder="2500"></div>
+          <div class="field"><label>Usual service radius (km)</label><input type="number" min="1" name="radius" value="80" placeholder="80"></div>
+          <div class="field full">
+            <label>Where is the car usually based?</label>
+            <div class="loc-row">
+              <input name="locationText" placeholder="e.g. Koronadal City" required>
+              <button type="button" class="btn secondary small" id="owner-geo-btn">Use my location</button>
+            </div>
+            <span class="coord-note" id="owner-coord-note">No precise coordinates yet — add them so our team can find you when relevant.</span>
+          </div>
+        </div>
+        <div class="form-actions">
+          <button class="btn amber" type="submit" id="owner-submit-btn">Register as a car owner</button>
+        </div>
+        <div class="status-msg" id="owner-status"></div>
+      </form>
+    </div>
+  </section>
+
+</div>
+
+<footer>
+  <div class="wrap">
+    <div>CarNexus — car rental, matched by our team.</div>
+    <div class="note">
+      Booking requests and car registrations here are reviewed and assigned from the <b>CarNexus Ops app</b> — that's
+      where the nearest-car ranking is calculated and where bookings get assigned to a specific owner. Renters and
+      car owners on this site never see raw distance or ranking data; only the admin does.
+    </div>
+  </div>
+</footer>
+
+<script>
+/* ---------------- NAV ---------------- */
+const tabButtons = document.querySelectorAll(".tab-btn");
+const views = document.querySelectorAll(".view");
+function showTab(name){
+  tabButtons.forEach(b=>b.classList.toggle("active", b.dataset.tab===name));
+  views.forEach(v=>v.classList.toggle("active", v.id===("view-"+name)));
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+tabButtons.forEach(b=>b.addEventListener("click", ()=>showTab(b.dataset.tab)));
+document.querySelectorAll("[data-goto]").forEach(b=>b.addEventListener("click", ()=>showTab(b.dataset.goto)));
+
+/* ---------------- HELPERS ---------------- */
+function uid(){ return Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8); }
+function showStatus(el, msg, kind){ el.textContent = msg; el.className = "status-msg show "+kind; }
+
+/* ---------------- STORAGE (shared with CarNexus Ops app) ---------------- */
+async function saveRecord(prefix, record){
+  await window.storage.set(prefix+record.id, JSON.stringify(record), true);
+}
+async function listRecords(prefix){
+  try{
+    const res = await window.storage.list(prefix, true);
+    if (!res || !res.keys) return [];
+    const out = [];
+    for (const key of res.keys){
+      try{ const r = await window.storage.get(key, true); if (r && r.value) out.push(JSON.parse(r.value)); }
+      catch(e){}
+    }
+    return out;
+  }catch(e){ return []; }
+}
+async function getOwners(){ return listRecords("owners:"); }
+
+/* ---------------- GEOLOCATION ---------------- */
+function wireGeoButton(btnId, noteId, formEl){
+  const btn = document.getElementById(btnId), note = document.getElementById(noteId);
+  btn.addEventListener("click", ()=>{
+    if (!navigator.geolocation){ note.textContent = "Your browser doesn't support location — typing the address is fine."; return; }
+    btn.disabled = true; btn.textContent = "Locating…";
+    navigator.geolocation.getCurrentPosition(
+      pos=>{
+        formEl.dataset.lat = pos.coords.latitude;
+        formEl.dataset.lng = pos.coords.longitude;
+        note.textContent = "Location captured (±" + Math.round(pos.coords.accuracy) + "m accuracy).";
+        note.className = "coord-note ok";
+        btn.disabled = false; btn.textContent = "Use my location";
+      },
+      err=>{
+        note.textContent = "Couldn't get your location (" + err.message + "). Typing the address is fine too.";
+        btn.disabled = false; btn.textContent = "Use my location";
+      },
+      {enableHighAccuracy:true, timeout:10000}
+    );
+  });
+}
+const bookingForm = document.getElementById("booking-form");
+const ownerForm = document.getElementById("owner-form");
+wireGeoButton("book-geo-btn","book-coord-note",bookingForm);
+wireGeoButton("owner-geo-btn","owner-coord-note",ownerForm);
+
+/* ---------------- BOOKING SUBMIT ---------------- */
+bookingForm.addEventListener("submit", async (e)=>{
+  e.preventDefault();
+  const btn = document.getElementById("book-submit-btn");
+  const statusEl = document.getElementById("book-status");
+  const confirmEl = document.getElementById("book-confirm");
+  confirmEl.classList.remove("show");
+  const fd = new FormData(bookingForm);
+  const booking = {
+    id: uid(),
+    name: fd.get("name").trim(),
+    phone: fd.get("phone").trim(),
+    email: fd.get("email").trim(),
+    vanType: fd.get("carType"), // kept field name for storage compatibility
+    pickupText: fd.get("pickupText").trim(),
+    lat: bookingForm.dataset.lat ? parseFloat(bookingForm.dataset.lat) : null,
+    lng: bookingForm.dataset.lng ? parseFloat(bookingForm.dataset.lng) : null,
+    startDate: fd.get("startDate"),
+    endDate: fd.get("endDate"),
+    notes: fd.get("notes").trim(),
+    createdAt: Date.now(),
+    status: "pending",
+    assignedOwnerId: null,
+    assignedOwnerName: null
+  };
+  if (new Date(booking.endDate) < new Date(booking.startDate)){
+    showStatus(statusEl, "Your return date is before your pickup date — please double-check the dates.", "error");
+    return;
+  }
+  btn.disabled = true; btn.textContent = "Sending…";
+  try{
+    await saveRecord("bookings:", booking);
+    showStatus(statusEl, "Booking request sent.", "success");
+    confirmEl.innerHTML = "We've received your request. Our team is checking fleet availability near <b>"+escapeHtml(booking.pickupText)+"</b> and will confirm your car shortly.";
+    confirmEl.classList.add("show");
+    bookingForm.reset();
+    delete bookingForm.dataset.lat; delete bookingForm.dataset.lng;
+    document.getElementById("book-coord-note").textContent = "No precise coordinates yet — typing an address still works fine.";
+    document.getElementById("book-coord-note").className = "coord-note";
+  }catch(err){
+    showStatus(statusEl, "Something went wrong saving your request. Please try again.", "error");
+  }finally{
+    btn.disabled = false; btn.textContent = "Send booking request";
+  }
+});
+function escapeHtml(s){ return (s||"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+
+/* ---------------- OWNER SUBMIT ---------------- */
+ownerForm.addEventListener("submit", async (e)=>{
+  e.preventDefault();
+  const btn = document.getElementById("owner-submit-btn");
+  const statusEl = document.getElementById("owner-status");
+  const fd = new FormData(ownerForm);
+  const owner = {
+    id: uid(),
+    name: fd.get("name").trim(),
+    phone: fd.get("phone").trim(),
+    email: fd.get("email").trim(),
+    vanModel: fd.get("vanModel").trim(),
+    vanType: fd.get("vanType"),
+    seats: parseInt(fd.get("seats"),10) || null,
+    rate: parseFloat(fd.get("rate")) || null,
+    radiusKm: parseFloat(fd.get("radius")) || 80,
+    locationText: fd.get("locationText").trim(),
+    lat: ownerForm.dataset.lat ? parseFloat(ownerForm.dataset.lat) : null,
+    lng: ownerForm.dataset.lng ? parseFloat(ownerForm.dataset.lng) : null,
+    createdAt: Date.now()
+  };
+  btn.disabled = true; btn.textContent = "Registering…";
+  try{
+    await saveRecord("owners:", owner);
+    showStatus(statusEl, "You're registered. Open the CarNexus Owner app and log in with this email or phone to see bookings assigned to you.", "success");
+    ownerForm.reset();
+    delete ownerForm.dataset.lat; delete ownerForm.dataset.lng;
+    document.getElementById("owner-coord-note").textContent = "No precise coordinates yet — add them so our team can find you when relevant.";
+    document.getElementById("owner-coord-note").className = "coord-note";
+  }catch(err){
+    showStatus(statusEl, "Something went wrong saving your registration. Please try again.", "error");
+  }finally{
+    btn.disabled = false; btn.textContent = "Register as a car owner";
+  }
+});
+</script>
+</body>
+</html>
