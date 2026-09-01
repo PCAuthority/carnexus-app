@@ -6,6 +6,9 @@
 <title>CarNexus — Car Rental</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="firebase-config.js"></script>
 <style>
 :root{
   --ink:#12151C;
@@ -286,21 +289,19 @@ document.querySelectorAll("[data-goto]").forEach(b=>b.addEventListener("click", 
 function uid(){ return Date.now().toString(36)+"-"+Math.random().toString(36).slice(2,8); }
 function showStatus(el, msg, kind){ el.textContent = msg; el.className = "status-msg show "+kind; }
 
-/* ---------------- STORAGE (shared with CarNexus Ops app) ---------------- */
+/* ---------------- STORAGE (Firestore, shared with CarNexus Ops app) ---------------- */
+// "prefix" is kept as a parameter name for compatibility but now maps to a Firestore collection.
+const COLLECTION_MAP = { "bookings:": "bookings", "owners:": "owners" };
 async function saveRecord(prefix, record){
-  await window.storage.set(prefix+record.id, JSON.stringify(record), true);
+  const collection = COLLECTION_MAP[prefix];
+  await window.db.collection(collection).doc(record.id).set(record);
 }
 async function listRecords(prefix){
   try{
-    const res = await window.storage.list(prefix, true);
-    if (!res || !res.keys) return [];
-    const out = [];
-    for (const key of res.keys){
-      try{ const r = await window.storage.get(key, true); if (r && r.value) out.push(JSON.parse(r.value)); }
-      catch(e){}
-    }
-    return out;
-  }catch(e){ return []; }
+    const collection = COLLECTION_MAP[prefix];
+    const snap = await window.db.collection(collection).get();
+    return snap.docs.map(d => d.data());
+  }catch(e){ console.error("Firestore read failed:", e); return []; }
 }
 async function getOwners(){ return listRecords("owners:"); }
 
