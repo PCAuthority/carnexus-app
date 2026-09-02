@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>CarNexus Ops</title>
+<link rel="icon" href="data:,">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#12151C">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -11,7 +12,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<script src="firebase-config.js"></script>
+<script src="../firebase-config.js"></script>
 <style>
 :root{
   --ink:#12151C; --panel:#1B1F27; --steel:#3A4556; --amber:#CC8B3C; --teal:#2FB6A6;
@@ -96,11 +97,14 @@ input:focus,select:focus{outline:2px solid var(--amber);outline-offset:1px;borde
 .job-card{background:#fff;border:1px solid var(--line);border-left:5px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:12px;}
 .job-card.assigned{border-left-color:var(--teal);}
 .job-card.pending{border-left-color:var(--amber);}
+.job-card.declined{border-left-color:var(--err);opacity:0.75;}
 .job-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
 .job-title{font-weight:700;font-size:0.98rem;}
 .job-badge{font-size:0.68rem;font-weight:700;padding:3px 9px;border-radius:10px;background:var(--paper-dim);color:var(--ink);white-space:nowrap;text-transform:capitalize;}
 .job-badge.pending{background:var(--amber);color:var(--ink);}
 .job-badge.assigned{background:var(--teal);color:#08302B;}
+.job-badge.declined{background:var(--err);color:#fff;}
+.btn.danger{background:transparent;color:var(--err);border-color:var(--err);}
 .job-meta{font-size:0.83rem;color:var(--muted);margin-top:5px;}
 .job-note{font-size:0.83rem;color:var(--muted);margin-top:5px;font-style:italic;}
 .assign-row{margin-top:12px;display:flex;gap:8px;}
@@ -189,6 +193,7 @@ input:focus,select:focus{outline:2px solid var(--amber);outline-offset:1px;borde
       <button class="chip" data-status="assigned">Assigned</button>
       <button class="chip" data-status="contacted">Contacted</button>
       <button class="chip" data-status="fulfilled">Fulfilled</button>
+      <button class="chip" data-status="declined">Declined</button>
     </div>
     <div id="admin-job-list"></div>
   </div>
@@ -247,6 +252,10 @@ const COLLECTION_MAP = { "bookings:": "bookings", "owners:": "owners" };
 async function saveRecord(prefix, record){
   const collection = COLLECTION_MAP[prefix];
   await window.db.collection(collection).doc(record.id).set(record);
+}
+async function deleteRecord(prefix, id){
+  const collection = COLLECTION_MAP[prefix];
+  await window.db.collection(collection).doc(id).delete();
 }
 async function listRecords(prefix){
   try{
@@ -436,14 +445,16 @@ function renderAdminJobList(){
       ${b.assignedOwnerName ? `<div class="job-meta"><b>Assigned to ${escapeHtml(b.assignedOwnerName)}</b></div>` : ""}
       <div class="assign-row">
         <select class="assign-select" ${ranked.length===0 ? "disabled":""}>
-          <option value="">${ranked.length ? "Choose nearest car…" : "No cars registered yet"}</option>
+          <option value="">${ranked.length ? (b.assignedOwnerId ? "Transfer to another car…" : "Choose nearest car…") : "No cars registered yet"}</option>
           ${options}
         </select>
-        <button class="btn small assign-btn" ${ranked.length===0 ? "disabled":""}>Assign</button>
+        <button class="btn small assign-btn" ${ranked.length===0 ? "disabled":""}>${b.assignedOwnerId ? "Transfer" : "Assign"}</button>
       </div>
       <div class="job-actions">
         <button class="btn secondary small mark-btn" data-status="contacted">Mark contacted</button>
         <button class="btn secondary small mark-btn" data-status="fulfilled">Mark fulfilled</button>
+        <button class="btn danger small mark-btn" data-status="declined">Decline</button>
+        <button class="btn danger small delete-btn">Delete</button>
       </div>
     </div>`;
   }).join("");
@@ -457,16 +468,17 @@ function renderAdminJobList(){
       const owner = ownersCache.find(o=>o.id===ownerId);
       const booking = bookingsCache.find(b=>b.id===bookingId);
       if (!owner || !booking) return;
+      const wasAssigned = !!booking.assignedOwnerId;
       booking.assignedOwnerId = owner.id;
       booking.assignedOwnerName = owner.name;
       booking.status = "assigned";
       const btn = card.querySelector(".assign-btn");
-      btn.disabled = true; btn.textContent = "Assigning…";
+      btn.disabled = true; btn.textContent = wasAssigned ? "Transferring…" : "Assigning…";
       try{
         await saveRecord("bookings:", booking);
-        showToast("Assigned "+booking.name+"'s booking to "+owner.name+".");
+        showToast((wasAssigned ? "Transferred " : "Assigned ")+booking.name+"'s booking to "+owner.name+".");
         await renderAdmin();
-      }catch(e){ btn.disabled = false; btn.textContent = "Assign"; }
+      }catch(e){ btn.disabled = false; btn.textContent = wasAssigned ? "Transfer" : "Assign"; }
     });
     card.querySelectorAll(".mark-btn").forEach(btn=>{
       btn.addEventListener("click", async ()=>{
@@ -474,9 +486,26 @@ function renderAdminJobList(){
         if (!booking) return;
         booking.status = btn.dataset.status;
         btn.disabled = true;
-        try{ await saveRecord("bookings:", booking); await renderAdmin(); }
+        try{
+          await saveRecord("bookings:", booking);
+          if (btn.dataset.status === "declined") showToast("Declined "+booking.name+"'s booking.");
+          await renderAdmin();
+        }
         catch(e){ btn.disabled = false; }
       });
+    });
+    card.querySelector(".delete-btn").addEventListener("click", async ()=>{
+      const booking = bookingsCache.find(b=>b.id===bookingId);
+      if (!booking) return;
+      const ok = confirm("Permanently delete the booking from "+booking.name+"? This can't be undone.");
+      if (!ok) return;
+      const btn = card.querySelector(".delete-btn");
+      btn.disabled = true; btn.textContent = "Deleting…";
+      try{
+        await deleteRecord("bookings:", booking.id);
+        showToast("Deleted "+booking.name+"'s booking.");
+        await renderAdmin();
+      }catch(e){ btn.disabled = false; btn.textContent = "Delete"; }
     });
   });
 }
