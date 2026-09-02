@@ -11,13 +11,16 @@
 // ============================================================
 
 const firebaseConfig = {
-  apiKey: "AIzaSyAZ0XcUR2nzEovhbk2cIRhxmLLvtXDaMoY",
-  authDomain: "carnexus-dea3f.firebaseapp.com",
-  projectId: "carnexus-dea3f",
-  storageBucket: "carnexus-dea3f.firebasestorage.app",
-  messagingSenderId: "181231983343",
-  appId: "1:181231983343:web:8162e1cd6b5de181d5991a"
+  apiKey: "PASTE_YOUR_API_KEY_HERE",
+  authDomain: "PASTE_YOUR_AUTH_DOMAIN_HERE",
+  projectId: "PASTE_YOUR_PROJECT_ID_HERE",
+  storageBucket: "PASTE_YOUR_STORAGE_BUCKET_HERE",
+  messagingSenderId: "PASTE_YOUR_SENDER_ID_HERE",
+  appId: "PASTE_YOUR_APP_ID_HERE"
 };
 
 firebase.initializeApp(firebaseConfig);
 window.db = firebase.firestore();
+// Avoids some ad-blockers / privacy extensions flagging Firestore's streaming
+// connection as tracking (shows as ERR_BLOCKED_BY_CLIENT in the console).
+window.db.settings({ experimentalAutoDetectLongPolling: true });
