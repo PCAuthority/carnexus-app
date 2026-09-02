@@ -21,3 +21,6 @@ const firebaseConfig = {
 
 firebase.initializeApp(firebaseConfig);
 window.db = firebase.firestore();
+// Avoids some ad-blockers / privacy extensions flagging Firestore's streaming
+// connection as tracking (shows as ERR_BLOCKED_BY_CLIENT in the console).
+window.db.settings({ experimentalAutoDetectLongPolling: true, merge: true });
