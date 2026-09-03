@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CarNexus — Car Rental</title>
+<link rel="icon" href="data:,">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -99,6 +100,24 @@ textarea{resize:vertical;min-height:70px;}
 .confirm-card{margin-top:16px;padding:16px;border-radius:4px;background:var(--paper-dim);border:1px dashed var(--steel);display:none;}
 .confirm-card.show{display:block;}
 
+/* track booking */
+.track-card{background:#fff;border:1px solid var(--line);border-left:5px solid var(--line);border-radius:6px;padding:18px 20px;margin-bottom:14px;}
+.track-card.pending{border-left-color:var(--amber);}
+.track-card.assigned{border-left-color:var(--teal);}
+.track-card.contacted{border-left-color:var(--teal);}
+.track-card.fulfilled{border-left-color:var(--ok);}
+.track-card.declined{border-left-color:var(--err);}
+.track-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;}
+.track-title{font-weight:700;font-size:1rem;}
+.track-badge{font-size:0.72rem;font-weight:700;padding:3px 10px;border-radius:10px;background:var(--paper-dim);color:var(--ink);white-space:nowrap;text-transform:capitalize;}
+.track-badge.pending{background:var(--amber);}
+.track-badge.assigned{background:var(--teal);color:#08302B;}
+.track-badge.contacted{background:var(--teal);color:#08302B;}
+.track-badge.fulfilled{background:var(--ok);color:#fff;}
+.track-badge.declined{background:var(--err);color:#fff;}
+.track-meta{font-size:0.87rem;color:var(--muted);margin-top:6px;}
+.track-status-line{font-size:0.9rem;margin-top:10px;padding:10px 12px;border-radius:4px;background:var(--paper-dim);}
+
 footer{border-top:1px solid var(--line);padding:30px 0 60px;color:var(--muted);font-size:0.85rem;}
 footer .note{background:var(--paper-dim);border-radius:5px;padding:14px 18px;margin-top:14px;}
 
@@ -118,6 +137,7 @@ footer .note{background:var(--paper-dim);border-radius:5px;padding:14px 18px;mar
       <button class="tab-btn active" data-tab="home">Home</button>
       <button class="tab-btn" data-tab="book">Book a Car</button>
       <button class="tab-btn" data-tab="owner">List Your Car</button>
+      <button class="tab-btn" data-tab="track">Track Booking</button>
     </div>
   </div>
 </nav>
@@ -260,6 +280,22 @@ footer .note{background:var(--paper-dim);border-radius:5px;padding:14px 18px;mar
     </div>
   </section>
 
+  <!-- TRACK BOOKING -->
+  <section class="view" id="view-track">
+    <div class="section-head">
+      <h2>Track your booking</h2>
+      <p>Enter the phone number or email you used when booking to see its current status.</p>
+    </div>
+    <div class="card">
+      <div class="form-grid" style="grid-template-columns:1fr auto;align-items:end;">
+        <div class="field"><label>Phone or email</label><input id="track-input" placeholder="you@email.com or 09xx xxx xxxx"></div>
+        <button class="btn amber" id="track-btn" style="height:44px;">Check status</button>
+      </div>
+      <div class="status-msg" id="track-status"></div>
+      <div id="track-results" style="margin-top:20px;"></div>
+    </div>
+  </section>
+
 </div>
 
 <footer>
@@ -305,6 +341,7 @@ async function listRecords(prefix){
   }catch(e){ console.error("Firestore read failed:", e); return []; }
 }
 async function getOwners(){ return listRecords("owners:"); }
+async function getBookings(){ return listRecords("bookings:"); }
 
 /* ---------------- GEOLOCATION ---------------- */
 function wireGeoButton(btnId, noteId, formEl){
@@ -413,6 +450,47 @@ ownerForm.addEventListener("submit", async (e)=>{
     showStatus(statusEl, "Something went wrong saving your registration. Please try again.", "error");
   }finally{
     btn.disabled = false; btn.textContent = "Register as a car owner";
+  }
+});
+
+/* ---------------- TRACK BOOKING ---------------- */
+const STATUS_COPY = {
+  pending: "We're reviewing fleet availability near your pickup location. This usually doesn't take long — check back soon.",
+  assigned: "Confirmed! A car has been assigned to your booking. Our team will reach out shortly to confirm pickup details.",
+  contacted: "Our team has reached out to confirm your pickup details.",
+  fulfilled: "This trip is complete. Thanks for booking with CarNexus!",
+  declined: "Unfortunately we weren't able to fulfill this request. Feel free to reach out or submit a new booking with different dates."
+};
+document.getElementById("track-btn").addEventListener("click", async ()=>{
+  const input = document.getElementById("track-input").value.trim().toLowerCase();
+  const statusEl = document.getElementById("track-status");
+  const resultsEl = document.getElementById("track-results");
+  resultsEl.innerHTML = "";
+  if (!input){ showStatus(statusEl, "Enter the phone or email you used when booking.", "error"); return; }
+  const btn = document.getElementById("track-btn");
+  btn.disabled = true; btn.textContent = "Checking…";
+  try{
+    const bookings = await getBookings();
+    const mine = bookings.filter(b => b.email.toLowerCase()===input || b.phone.toLowerCase()===input)
+                          .sort((a,b)=>b.createdAt-a.createdAt);
+    if (!mine.length){
+      showStatus(statusEl, "No bookings found with that phone or email. Double-check what you entered, or it may not have gone through — you can resubmit on the Book a Car tab.", "error");
+      return;
+    }
+    statusEl.classList.remove("show");
+    resultsEl.innerHTML = mine.map(b => `
+      <div class="track-card ${b.status}">
+        <div class="track-top">
+          <span class="track-title">${escapeHtml(b.vanType)} — ${b.startDate} → ${b.endDate}</span>
+          <span class="track-badge ${b.status}">${b.status}</span>
+        </div>
+        <div class="track-meta">Pickup: ${escapeHtml(b.pickupText)}</div>
+        <div class="track-status-line">${STATUS_COPY[b.status] || ""}</div>
+      </div>`).join("");
+  }catch(err){
+    showStatus(statusEl, "Something went wrong checking your booking. Please try again.", "error");
+  }finally{
+    btn.disabled = false; btn.textContent = "Check status";
   }
 });
 </script>
