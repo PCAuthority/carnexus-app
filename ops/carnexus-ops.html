@@ -112,6 +112,14 @@ input:focus,select:focus{outline:2px solid var(--amber);outline-offset:1px;borde
 .date-edit-row{display:flex;gap:8px;align-items:center;margin-top:10px;}
 .date-edit-row input{flex:1;font-size:0.85rem;padding:8px 10px;}
 .btn.danger{background:transparent;color:var(--err);border-color:var(--err);}
+.btn.ok{background:var(--ok);border-color:var(--ok);color:#fff;}
+.job-badge.owner-pending{background:var(--amber);color:var(--ink);}
+.job-badge.owner-approved{background:var(--teal);color:#08302B;}
+.job-badge.owner-rejected{background:var(--err);color:#fff;}
+.fleet-card.pending{border-left:4px solid var(--amber);}
+.status-banner{padding:14px 16px;border-radius:8px;margin-bottom:16px;font-size:0.88rem;}
+.status-banner.pending{background:#FFF3E0;border:1px solid var(--amber);}
+.status-banner.rejected{background:#F7E5E0;border:1px solid var(--err);}
 .job-meta{font-size:0.83rem;color:var(--muted);margin-top:5px;}
 .job-note{font-size:0.83rem;color:var(--muted);margin-top:5px;font-style:italic;}
 .assign-row{margin-top:12px;display:flex;gap:8px;}
@@ -192,6 +200,7 @@ input:focus,select:focus{outline:2px solid var(--amber);outline-offset:1px;borde
 
   <!-- ============ OWNER HOME ============ -->
   <div class="screen hidden" id="screen-owner-home">
+    <div id="owner-status-banner"></div>
     <div class="stat-row" id="owner-stats"></div>
     <h3 style="font-size:1.05rem;margin-bottom:10px;">Your assigned bookings</h3>
     <div id="owner-job-list"></div>
@@ -214,6 +223,12 @@ input:focus,select:focus{outline:2px solid var(--amber);outline-offset:1px;borde
   <!-- ============ ADMIN FLEET ============ -->
   <div class="screen hidden" id="screen-admin-fleet">
     <h3 style="font-size:1.05rem;margin-bottom:10px;">Registered car owners</h3>
+    <div class="chip-row" id="fleet-filter-chips">
+      <button class="chip active" data-fleet-status="all">All</button>
+      <button class="chip" data-fleet-status="pending">Pending</button>
+      <button class="chip" data-fleet-status="approved">Approved</button>
+      <button class="chip" data-fleet-status="rejected">Rejected</button>
+    </div>
     <div id="admin-fleet-list"></div>
   </div>
 
@@ -258,6 +273,23 @@ function showToast(msg){
 }
 function requestNotifyPermission(){
   if (window.Notification && Notification.permission === "default"){ Notification.requestPermission().catch(()=>{}); }
+}
+
+async function sendOwnerEmail(owner, statusTitle, statusMessage){
+  if (!window.emailjs || typeof EMAILJS_PUBLIC_KEY === "undefined" || EMAILJS_PUBLIC_KEY.startsWith("PASTE_")) return false;
+  try{
+    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+      to_email: owner.email,
+      to_name: owner.name,
+      status_title: statusTitle,
+      status_message: statusMessage,
+      car_type: owner.vanModel,
+      pickup: owner.locationText,
+      start_date: "-",
+      end_date: "-"
+    });
+    return true;
+  }catch(e){ console.error("EmailJS send failed:", e); return false; }
 }
 
 /* ================= STORAGE (Firestore, shared with main CarNexus site) ================= */
@@ -323,6 +355,22 @@ document.getElementById("owner-logout-btn").addEventListener("click", ()=>{
 
 async function renderOwnerHome(isPoll){
   if (!currentOwnerRecord) return;
+
+  // Refresh our own record in case status changed (e.g. just got approved) while this screen is open.
+  const owners = await getOwners();
+  const freshSelf = owners.find(o=>o.id===currentOwnerRecord.id);
+  if (freshSelf) currentOwnerRecord = freshSelf;
+
+  const bannerEl = document.getElementById("owner-status-banner");
+  const status = currentOwnerRecord.status || "approved";
+  if (status === "pending"){
+    bannerEl.innerHTML = `<div class="status-banner pending">🕐 Your registration is pending admin approval. You'll get an email once you're approved and visible for new bookings.</div>`;
+  } else if (status === "rejected"){
+    bannerEl.innerHTML = `<div class="status-banner rejected">Your registration wasn't approved. Please contact us if you'd like more information.</div>`;
+  } else {
+    bannerEl.innerHTML = "";
+  }
+
   const bookings = await getBookings();
   const mine = bookings.filter(b => b.assignedOwnerId === currentOwnerRecord.id)
                         .sort((a,b)=>b.createdAt-a.createdAt);
@@ -433,6 +481,14 @@ document.querySelectorAll("#admin-filter-chips .chip").forEach(c=>{
     renderAdminJobList();
   });
 });
+document.querySelectorAll("#fleet-filter-chips .chip").forEach(c=>{
+  c.addEventListener("click", ()=>{
+    document.querySelectorAll("#fleet-filter-chips .chip").forEach(x=>x.classList.remove("active"));
+    c.classList.add("active");
+    fleetFilter = c.dataset.fleetStatus;
+    renderAdminFleetList();
+  });
+});
 
 let adminSeenSignals = new Set();
 
@@ -469,14 +525,16 @@ async function renderAdmin(isPoll){
   document.getElementById("admin-stats").innerHTML =
     statBlock(bookingsCache.length, "Total") +
     statBlock(bookingsCache.filter(b=>b.status==="pending").length, "Pending") +
-    statBlock(ownersCache.length, "Fleet");
+    statBlock(ownersCache.length, "Fleet") +
+    statBlock(ownersCache.filter(o=>o.status==="pending").length, "Pending owners");
 
   renderAdminJobList();
   renderAdminFleetList();
 }
 
 function nearestOwnersFor(booking){
-  return ownersCache.map(o=>{
+  const approvedOwners = ownersCache.filter(o => o.status ? o.status === "approved" : true); // grandfather older records with no status field
+  return approvedOwners.map(o=>{
     let d = null;
     if (booking.lat != null && o.lat != null) d = haversineKm(booking.lat, booking.lng, o.lat, o.lng);
     return {owner:o, d};
@@ -488,15 +546,27 @@ function nearestOwnersFor(booking){
   });
 }
 
-// Owners currently tied up on another active booking (assigned or contacted, not yet fulfilled/declined).
-// excludeBookingId lets a booking's own current owner still show as selectable for itself.
-function getBusyOwnerMap(excludeBookingId){
+function datesOverlap(startA, endA, startB, endB){
+  return startA <= endB && startB <= endA;
+}
+
+// Finds another active (assigned/contacted) booking for this owner whose date range
+// overlaps [startDate, endDate], excluding the booking being checked itself.
+function getConflictingBooking(ownerId, startDate, endDate, excludeBookingId){
+  return bookingsCache.find(bk =>
+    bk.id !== excludeBookingId &&
+    bk.assignedOwnerId === ownerId &&
+    (bk.status === "assigned" || bk.status === "contacted") &&
+    datesOverlap(startDate, endDate, bk.startDate, bk.endDate)
+  ) || null;
+}
+
+// Owner -> name of the booking they conflict with, scoped to this booking's own date range.
+function getBusyOwnerMap(booking){
   const map = {};
-  bookingsCache.forEach(bk=>{
-    if (bk.id === excludeBookingId) return;
-    if ((bk.status === "assigned" || bk.status === "contacted") && bk.assignedOwnerId){
-      map[bk.assignedOwnerId] = bk.name;
-    }
+  ownersCache.forEach(o=>{
+    const conflict = getConflictingBooking(o.id, booking.startDate, booking.endDate, booking.id);
+    if (conflict) map[o.id] = conflict.name;
   });
   return map;
 }
@@ -510,7 +580,7 @@ function renderAdminJobList(){
   }
   listEl.innerHTML = filtered.map(b=>{
     const ranked = nearestOwnersFor(b);
-    const busyMap = getBusyOwnerMap(b.id);
+    const busyMap = getBusyOwnerMap(b);
     const options = ranked.map(r=>{
       const busyWith = busyMap[r.owner.id];
       const isBusy = !!busyWith;
@@ -589,7 +659,7 @@ function renderAdminJobList(){
       const owner = ownersCache.find(o=>o.id===ownerId);
       const booking = bookingsCache.find(b=>b.id===bookingId);
       if (!owner || !booking) return;
-      const busyMap = getBusyOwnerMap(booking.id);
+      const busyMap = getBusyOwnerMap(booking);
       if (busyMap[ownerId]){
         showToast(owner.name+" is already on a booking with "+busyMap[ownerId]+" — mark that one fulfilled first.");
         return;
@@ -653,14 +723,20 @@ function renderAdminJobList(){
       const newDate = card.querySelector(".date-edit-input").value;
       if (!newDate) return;
       const oldDate = booking.endDate;
+      if (newDate === oldDate) return;
+      if (booking.assignedOwnerId){
+        const conflict = getConflictingBooking(booking.assignedOwnerId, booking.startDate, newDate, booking.id);
+        if (conflict){
+          showToast(booking.assignedOwnerName+" is already booked with "+conflict.name+" ("+conflict.startDate+" → "+conflict.endDate+") during that period. Transfer this booking to another car first, or pick different dates.");
+          return;
+        }
+      }
       booking.endDate = newDate;
       dateSaveBtn.disabled = true; dateSaveBtn.textContent = "Saving…";
       try{
         await saveRecord("bookings:", booking);
-        if (newDate !== oldDate){
-          showToast("Updated return date for "+booking.name+" to "+newDate+".");
-          sendStatusEmail(booking, "Booking updated", "Your return date has been updated to "+newDate+".");
-        }
+        showToast("Updated return date for "+booking.name+" to "+newDate+".");
+        sendStatusEmail(booking, "Booking updated", "Your return date has been updated to "+newDate+".");
         await renderAdmin();
       }catch(e){ dateSaveBtn.disabled = false; dateSaveBtn.textContent = "Update return date"; }
     });
@@ -670,6 +746,13 @@ function renderAdminJobList(){
       const booking = bookingsCache.find(b=>b.id===bookingId);
       if (!booking || !booking.renterExtensionRequest) return;
       const newDate = booking.renterExtensionRequest.newEndDate;
+      if (booking.assignedOwnerId){
+        const conflict = getConflictingBooking(booking.assignedOwnerId, booking.startDate, newDate, booking.id);
+        if (conflict){
+          showToast("Can't approve — "+booking.assignedOwnerName+" already has "+conflict.name+"'s booking ("+conflict.startDate+" → "+conflict.endDate+") overlapping that date. Transfer this booking to a free car first, or dismiss the request.");
+          return;
+        }
+      }
       booking.endDate = newDate;
       booking.renterExtensionRequest = null;
       approveExtBtn.disabled = true; approveExtBtn.textContent = "Approving…";
@@ -723,32 +806,52 @@ function renderAdminJobList(){
 
 let editingOwnerId = null;
 
+let fleetFilter = "all";
+
 function renderAdminFleetList(){
   const el = document.getElementById("admin-fleet-list");
-  const sorted = ownersCache.slice().sort((a,b)=>b.createdAt-a.createdAt);
-  if (!sorted.length){
-    el.innerHTML = '<div class="empty-state">No car owners registered yet.</div>';
+  const sorted = ownersCache.slice().sort((a,b)=>{
+    // pending first so they don't get lost in the list
+    const rank = s => s === "pending" ? 0 : s === "approved" || !s ? 1 : 2;
+    const ra = rank(a.status), rb = rank(b.status);
+    if (ra !== rb) return ra - rb;
+    return b.createdAt - a.createdAt;
+  });
+  const filtered = fleetFilter === "all" ? sorted : sorted.filter(o => (o.status || "approved") === fleetFilter);
+  if (!filtered.length){
+    el.innerHTML = '<div class="empty-state">No car owners in this view.</div>';
     return;
   }
-  el.innerHTML = sorted.map(o => o.id === editingOwnerId ? fleetEditCard(o) : fleetViewCard(o)).join("");
+  el.innerHTML = filtered.map(o => o.id === editingOwnerId ? fleetEditCard(o) : fleetViewCard(o)).join("");
   wireFleetCardEvents();
 }
 
 function fleetViewCard(o){
+  const status = o.status || "approved"; // grandfather older records with no status field
   const busyBooking = bookingsCache.find(bk => bk.assignedOwnerId===o.id && (bk.status==="assigned"||bk.status==="contacted"));
+  const statusBadge = status === "pending" ? `<span class="job-badge owner-pending">Pending review</span>`
+    : status === "rejected" ? `<span class="job-badge owner-rejected">Rejected</span>`
+    : busyBooking ? `<span class="job-badge busy">On a booking</span>`
+    : `<span class="job-badge">${escapeHtml(o.vanType)}</span>`;
+  let actions = `<button class="btn secondary small fleet-edit-btn">Edit</button>`;
+  if (status === "pending"){
+    actions = `<button class="btn ok small fleet-approve-btn">Approve</button>
+               <button class="btn danger small fleet-reject-btn">Reject</button>` + actions;
+  } else if (status === "rejected"){
+    actions = `<button class="btn ok small fleet-approve-btn">Approve</button>` + actions;
+  }
+  actions += `<button class="btn danger small fleet-delete-btn">Remove</button>`;
   return `
-    <div class="fleet-card ${busyBooking?'busy':''}" data-owner="${o.id}">
+    <div class="fleet-card ${status} ${busyBooking?'busy':''}" data-owner="${o.id}">
       <div class="job-top">
         <span class="job-title">${escapeHtml(o.name)} — ${escapeHtml(o.vanModel)}</span>
-        <span class="job-badge ${busyBooking?'busy':''}">${busyBooking ? "On a booking" : escapeHtml(o.vanType)}</span>
+        ${statusBadge}
       </div>
       <div class="job-meta">📍 ${escapeHtml(o.locationText)} ${o.lat!=null ? "(located)" : "(no coordinates)"} · radius ${o.radiusKm} km</div>
       <div class="job-meta">☎ ${escapeHtml(o.phone)} · ${escapeHtml(o.email)} · ₱${o.rate}/day · ${o.seats} seats</div>
+      ${status === "pending" ? `<div class="job-meta">🕐 Waiting for your approval before this car appears in booking assignments.</div>` : ""}
       ${busyBooking ? `<div class="job-meta">🔒 Currently with ${escapeHtml(busyBooking.name)}, free again once marked fulfilled.</div>` : ""}
-      <div class="job-actions">
-        <button class="btn secondary small fleet-edit-btn">Edit</button>
-        <button class="btn danger small fleet-delete-btn">Remove</button>
-      </div>
+      <div class="job-actions">${actions}</div>
     </div>`;
 }
 
@@ -791,6 +894,36 @@ function wireFleetCardEvents(){
 
     const cancelBtn = card.querySelector(".fleet-cancel-btn");
     if (cancelBtn) cancelBtn.addEventListener("click", ()=>{ editingOwnerId = null; renderAdminFleetList(); });
+
+    const approveBtn = card.querySelector(".fleet-approve-btn");
+    if (approveBtn) approveBtn.addEventListener("click", async ()=>{
+      const owner = ownersCache.find(o=>o.id===ownerId);
+      if (!owner) return;
+      owner.status = "approved";
+      approveBtn.disabled = true; approveBtn.textContent = "Approving…";
+      try{
+        await saveRecord("owners:", owner);
+        showToast("Approved "+owner.name+" — now visible for booking assignments.");
+        sendOwnerEmail(owner, "You're approved!", "Your car listing has been approved and is now visible for new booking assignments. Thanks for joining CarNexus!");
+        await renderAdmin();
+      }catch(e){ approveBtn.disabled = false; approveBtn.textContent = "Approve"; }
+    });
+
+    const rejectBtn = card.querySelector(".fleet-reject-btn");
+    if (rejectBtn) rejectBtn.addEventListener("click", async ()=>{
+      const owner = ownersCache.find(o=>o.id===ownerId);
+      if (!owner) return;
+      const ok = confirm("Reject "+owner.name+"'s registration? They'll stay in your records but won't be assignable until approved.");
+      if (!ok) return;
+      owner.status = "rejected";
+      rejectBtn.disabled = true; rejectBtn.textContent = "Rejecting…";
+      try{
+        await saveRecord("owners:", owner);
+        showToast("Rejected "+owner.name+"'s registration.");
+        sendOwnerEmail(owner, "Registration update", "We're unable to approve your car listing at this time. Please contact us if you'd like more information.");
+        await renderAdmin();
+      }catch(e){ rejectBtn.disabled = false; rejectBtn.textContent = "Reject"; }
+    });
 
     const deleteBtn = card.querySelector(".fleet-delete-btn");
     if (deleteBtn) deleteBtn.addEventListener("click", async ()=>{
