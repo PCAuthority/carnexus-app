@@ -13,6 +13,8 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="../firebase-config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script src="../emailjs-config.js"></script>
 <style>
 :root{
   --ink:#12151C; --panel:#1B1F27; --steel:#3A4556; --amber:#CC8B3C; --teal:#2FB6A6;
@@ -104,6 +106,7 @@ input:focus,select:focus{outline:2px solid var(--amber);outline-offset:1px;borde
 .job-badge.pending{background:var(--amber);color:var(--ink);}
 .job-badge.assigned{background:var(--teal);color:#08302B;}
 .job-badge.declined{background:var(--err);color:#fff;}
+.job-badge.busy{background:var(--steel);color:#fff;}
 .btn.danger{background:transparent;color:var(--err);border-color:var(--err);}
 .job-meta{font-size:0.83rem;color:var(--muted);margin-top:5px;}
 .job-note{font-size:0.83rem;color:var(--muted);margin-top:5px;font-style:italic;}
@@ -114,6 +117,7 @@ input:focus,select:focus{outline:2px solid var(--amber);outline-offset:1px;borde
 
 /* fleet list */
 .fleet-card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:12px;}
+.fleet-card.busy{background:var(--paper-dim);opacity:0.85;}
 .fleet-edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 10px;margin-top:10px;}
 .fleet-edit-grid .full{grid-column:1/-1;}
 .fleet-edit-grid label{font-size:0.72rem;font-weight:600;color:var(--ink);display:block;margin-bottom:3px;}
@@ -425,6 +429,19 @@ function nearestOwnersFor(booking){
   });
 }
 
+// Owners currently tied up on another active booking (assigned or contacted, not yet fulfilled/declined).
+// excludeBookingId lets a booking's own current owner still show as selectable for itself.
+function getBusyOwnerMap(excludeBookingId){
+  const map = {};
+  bookingsCache.forEach(bk=>{
+    if (bk.id === excludeBookingId) return;
+    if ((bk.status === "assigned" || bk.status === "contacted") && bk.assignedOwnerId){
+      map[bk.assignedOwnerId] = bk.name;
+    }
+  });
+  return map;
+}
+
 function renderAdminJobList(){
   const listEl = document.getElementById("admin-job-list");
   const filtered = adminFilter==="all" ? bookingsCache : bookingsCache.filter(b=>b.status===adminFilter);
@@ -434,9 +451,15 @@ function renderAdminJobList(){
   }
   listEl.innerHTML = filtered.map(b=>{
     const ranked = nearestOwnersFor(b);
-    const options = ranked.map(r=>
-      `<option value="${r.owner.id}" ${b.assignedOwnerId===r.owner.id?"selected":""}>${escapeHtml(r.owner.name)} — ${escapeHtml(r.owner.vanModel)} (${fmtKm(r.d)})</option>`
-    ).join("");
+    const busyMap = getBusyOwnerMap(b.id);
+    const options = ranked.map(r=>{
+      const busyWith = busyMap[r.owner.id];
+      const isBusy = !!busyWith;
+      const label = isBusy
+        ? `${escapeHtml(r.owner.name)} — ${escapeHtml(r.owner.vanModel)} (on a booking with ${escapeHtml(busyWith)})`
+        : `${escapeHtml(r.owner.name)} — ${escapeHtml(r.owner.vanModel)} (${fmtKm(r.d)})`;
+      return `<option value="${r.owner.id}" ${b.assignedOwnerId===r.owner.id?"selected":""} ${isBusy?"disabled":""}>${label}</option>`;
+    }).join("");
     return `
     <div class="job-card ${b.status}" data-booking="${b.id}">
       <div class="job-top">
@@ -473,6 +496,11 @@ function renderAdminJobList(){
       const owner = ownersCache.find(o=>o.id===ownerId);
       const booking = bookingsCache.find(b=>b.id===bookingId);
       if (!owner || !booking) return;
+      const busyMap = getBusyOwnerMap(booking.id);
+      if (busyMap[ownerId]){
+        showToast(owner.name+" is already on a booking with "+busyMap[ownerId]+" — mark that one fulfilled first.");
+        return;
+      }
       const wasAssigned = !!booking.assignedOwnerId;
       booking.assignedOwnerId = owner.id;
       booking.assignedOwnerName = owner.name;
@@ -482,6 +510,12 @@ function renderAdminJobList(){
       try{
         await saveRecord("bookings:", booking);
         showToast((wasAssigned ? "Transferred " : "Assigned ")+booking.name+"'s booking to "+owner.name+".");
+        sendStatusEmail(booking,
+          wasAssigned ? "Car updated" : "Booking confirmed",
+          wasAssigned
+            ? "Your booking has been updated with a new car assignment. Our team will confirm pickup details with you."
+            : "Good news — a car has been assigned to your booking. Our team will reach out shortly to confirm pickup details."
+        );
         await renderAdmin();
       }catch(e){ btn.disabled = false; btn.textContent = wasAssigned ? "Transfer" : "Assign"; }
     });
@@ -493,7 +527,13 @@ function renderAdminJobList(){
         btn.disabled = true;
         try{
           await saveRecord("bookings:", booking);
-          if (btn.dataset.status === "declined") showToast("Declined "+booking.name+"'s booking.");
+          if (btn.dataset.status === "declined"){
+            showToast("Declined "+booking.name+"'s booking.");
+            sendStatusEmail(booking, "Booking declined", "Unfortunately we weren't able to fulfill this booking request. Feel free to reach out to us, or submit a new booking with different dates.");
+          }
+          if (btn.dataset.status === "fulfilled"){
+            sendStatusEmail(booking, "Trip complete", "Your trip with CarNexus is complete. Thanks for booking with us!");
+          }
           await renderAdmin();
         }
         catch(e){ btn.disabled = false; }
@@ -529,14 +569,16 @@ function renderAdminFleetList(){
 }
 
 function fleetViewCard(o){
+  const busyBooking = bookingsCache.find(bk => bk.assignedOwnerId===o.id && (bk.status==="assigned"||bk.status==="contacted"));
   return `
-    <div class="fleet-card" data-owner="${o.id}">
+    <div class="fleet-card ${busyBooking?'busy':''}" data-owner="${o.id}">
       <div class="job-top">
         <span class="job-title">${escapeHtml(o.name)} — ${escapeHtml(o.vanModel)}</span>
-        <span class="job-badge">${escapeHtml(o.vanType)}</span>
+        <span class="job-badge ${busyBooking?'busy':''}">${busyBooking ? "On a booking" : escapeHtml(o.vanType)}</span>
       </div>
       <div class="job-meta">📍 ${escapeHtml(o.locationText)} ${o.lat!=null ? "(located)" : "(no coordinates)"} · radius ${o.radiusKm} km</div>
       <div class="job-meta">☎ ${escapeHtml(o.phone)} · ${escapeHtml(o.email)} · ₱${o.rate}/day · ${o.seats} seats</div>
+      ${busyBooking ? `<div class="job-meta">🔒 Currently with ${escapeHtml(busyBooking.name)}, free again once marked fulfilled.</div>` : ""}
       <div class="job-actions">
         <button class="btn secondary small fleet-edit-btn">Edit</button>
         <button class="btn danger small fleet-delete-btn">Remove</button>
