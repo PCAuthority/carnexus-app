@@ -10,6 +10,8 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script src="firebase-config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script src="emailjs-config.js"></script>
 <style>
 :root{
   --ink:#12151C;
@@ -405,6 +407,7 @@ bookingForm.addEventListener("submit", async (e)=>{
     showStatus(statusEl, "Booking request sent.", "success");
     confirmEl.innerHTML = "We've received your request. Our team is checking fleet availability near <b>"+escapeHtml(booking.pickupText)+"</b> and will confirm your car shortly.";
     confirmEl.classList.add("show");
+    sendStatusEmail(booking, "Booking received", "We've received your booking request and our team is checking fleet availability near your pickup location. We'll confirm your car shortly.");
     bookingForm.reset();
     delete bookingForm.dataset.lat; delete bookingForm.dataset.lng;
     document.getElementById("book-coord-note").textContent = "No precise coordinates yet — typing an address still works fine.";
