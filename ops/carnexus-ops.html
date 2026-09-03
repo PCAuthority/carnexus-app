@@ -114,6 +114,11 @@ input:focus,select:focus{outline:2px solid var(--amber);outline-offset:1px;borde
 
 /* fleet list */
 .fleet-card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:14px 16px;margin-bottom:12px;}
+.fleet-edit-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 10px;margin-top:10px;}
+.fleet-edit-grid .full{grid-column:1/-1;}
+.fleet-edit-grid label{font-size:0.72rem;font-weight:600;color:var(--ink);display:block;margin-bottom:3px;}
+.fleet-edit-grid input,.fleet-edit-grid select{width:100%;border:1.5px solid var(--line);border-radius:5px;padding:9px 10px;font-family:inherit;font-size:0.88rem;background:var(--paper-dim);color:var(--text);}
+.fleet-edit-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;}
 
 /* bottom nav */
 .bottom-nav{
@@ -510,17 +515,144 @@ function renderAdminJobList(){
   });
 }
 
+let editingOwnerId = null;
+
 function renderAdminFleetList(){
   const el = document.getElementById("admin-fleet-list");
-  el.innerHTML = ownersCache.length ? ownersCache.slice().sort((a,b)=>b.createdAt-a.createdAt).map(o=>`
-    <div class="fleet-card">
+  const sorted = ownersCache.slice().sort((a,b)=>b.createdAt-a.createdAt);
+  if (!sorted.length){
+    el.innerHTML = '<div class="empty-state">No car owners registered yet.</div>';
+    return;
+  }
+  el.innerHTML = sorted.map(o => o.id === editingOwnerId ? fleetEditCard(o) : fleetViewCard(o)).join("");
+  wireFleetCardEvents();
+}
+
+function fleetViewCard(o){
+  return `
+    <div class="fleet-card" data-owner="${o.id}">
       <div class="job-top">
         <span class="job-title">${escapeHtml(o.name)} — ${escapeHtml(o.vanModel)}</span>
         <span class="job-badge">${escapeHtml(o.vanType)}</span>
       </div>
       <div class="job-meta">📍 ${escapeHtml(o.locationText)} ${o.lat!=null ? "(located)" : "(no coordinates)"} · radius ${o.radiusKm} km</div>
       <div class="job-meta">☎ ${escapeHtml(o.phone)} · ${escapeHtml(o.email)} · ₱${o.rate}/day · ${o.seats} seats</div>
-    </div>`).join("") : '<div class="empty-state">No car owners registered yet.</div>';
+      <div class="job-actions">
+        <button class="btn secondary small fleet-edit-btn">Edit</button>
+        <button class="btn danger small fleet-delete-btn">Remove</button>
+      </div>
+    </div>`;
+}
+
+function fleetEditCard(o){
+  const carTypes = ["Sedan","SUV","Pickup truck","Passenger van","Luxury / premium"];
+  const typeOptions = carTypes.map(t=>`<option ${o.vanType===t?"selected":""}>${t}</option>`).join("");
+  return `
+    <div class="fleet-card" data-owner="${o.id}">
+      <div class="job-top"><span class="job-title">Editing ${escapeHtml(o.name)}</span></div>
+      <div class="fleet-edit-grid">
+        <div><label>Owner name</label><input class="fe-name" value="${escapeHtml(o.name)}"></div>
+        <div><label>Phone</label><input class="fe-phone" value="${escapeHtml(o.phone)}"></div>
+        <div class="full"><label>Email</label><input class="fe-email" type="email" value="${escapeHtml(o.email)}"></div>
+        <div><label>Car make &amp; model</label><input class="fe-model" value="${escapeHtml(o.vanModel)}"></div>
+        <div><label>Car type</label><select class="fe-type">${typeOptions}</select></div>
+        <div><label>Seats</label><input class="fe-seats" type="number" min="1" value="${o.seats ?? ""}"></div>
+        <div><label>Daily rate (₱)</label><input class="fe-rate" type="number" min="0" value="${o.rate ?? ""}"></div>
+        <div><label>Service radius (km)</label><input class="fe-radius" type="number" min="1" value="${o.radiusKm ?? 80}"></div>
+        <div class="full"><label>Based location</label><input class="fe-location" value="${escapeHtml(o.locationText)}"></div>
+        <div class="full">
+          <button type="button" class="btn secondary small fleet-geo-btn">Update to current location</button>
+          <span class="coord-note fe-coord-note" style="display:block;margin-top:6px;">${o.lat!=null ? "Coordinates on file (±unknown accuracy)." : "No coordinates on file."}</span>
+        </div>
+      </div>
+      <div class="fleet-edit-actions">
+        <button class="btn small fleet-save-btn">Save changes</button>
+        <button class="btn ghost small fleet-cancel-btn">Cancel</button>
+      </div>
+      <div class="status-msg fleet-status"></div>
+    </div>`;
+}
+
+function wireFleetCardEvents(){
+  const el = document.getElementById("admin-fleet-list");
+  el.querySelectorAll(".fleet-card").forEach(card=>{
+    const ownerId = card.dataset.owner;
+
+    const editBtn = card.querySelector(".fleet-edit-btn");
+    if (editBtn) editBtn.addEventListener("click", ()=>{ editingOwnerId = ownerId; renderAdminFleetList(); });
+
+    const cancelBtn = card.querySelector(".fleet-cancel-btn");
+    if (cancelBtn) cancelBtn.addEventListener("click", ()=>{ editingOwnerId = null; renderAdminFleetList(); });
+
+    const deleteBtn = card.querySelector(".fleet-delete-btn");
+    if (deleteBtn) deleteBtn.addEventListener("click", async ()=>{
+      const owner = ownersCache.find(o=>o.id===ownerId);
+      if (!owner) return;
+      const ok = confirm("Remove "+owner.name+" ("+owner.vanModel+") from the fleet? This won't affect bookings already assigned to them, but they'll no longer appear as an option for new assignments.");
+      if (!ok) return;
+      deleteBtn.disabled = true; deleteBtn.textContent = "Removing…";
+      try{
+        await deleteRecord("owners:", ownerId);
+        showToast("Removed "+owner.name+" from the fleet.");
+        await renderAdmin();
+      }catch(e){ deleteBtn.disabled = false; deleteBtn.textContent = "Remove"; }
+    });
+
+    const geoBtn = card.querySelector(".fleet-geo-btn");
+    if (geoBtn) geoBtn.addEventListener("click", ()=>{
+      const note = card.querySelector(".fe-coord-note");
+      if (!navigator.geolocation){ note.textContent = "This browser doesn't support location."; return; }
+      geoBtn.disabled = true; geoBtn.textContent = "Locating…";
+      navigator.geolocation.getCurrentPosition(
+        pos=>{
+          card.dataset.lat = pos.coords.latitude;
+          card.dataset.lng = pos.coords.longitude;
+          note.textContent = "New location captured (±" + Math.round(pos.coords.accuracy) + "m). Save to apply.";
+          geoBtn.disabled = false; geoBtn.textContent = "Update to current location";
+        },
+        err=>{
+          note.textContent = "Couldn't get location (" + err.message + ").";
+          geoBtn.disabled = false; geoBtn.textContent = "Update to current location";
+        },
+        {enableHighAccuracy:true, timeout:10000}
+      );
+    });
+
+    const saveBtn = card.querySelector(".fleet-save-btn");
+    if (saveBtn) saveBtn.addEventListener("click", async ()=>{
+      const owner = ownersCache.find(o=>o.id===ownerId);
+      if (!owner) return;
+      const statusEl = card.querySelector(".fleet-status");
+      const updated = {
+        ...owner,
+        name: card.querySelector(".fe-name").value.trim(),
+        phone: card.querySelector(".fe-phone").value.trim(),
+        email: card.querySelector(".fe-email").value.trim(),
+        vanModel: card.querySelector(".fe-model").value.trim(),
+        vanType: card.querySelector(".fe-type").value,
+        seats: parseInt(card.querySelector(".fe-seats").value, 10) || null,
+        rate: parseFloat(card.querySelector(".fe-rate").value) || null,
+        radiusKm: parseFloat(card.querySelector(".fe-radius").value) || 80,
+        locationText: card.querySelector(".fe-location").value.trim(),
+        lat: card.dataset.lat ? parseFloat(card.dataset.lat) : owner.lat,
+        lng: card.dataset.lng ? parseFloat(card.dataset.lng) : owner.lng
+      };
+      if (!updated.name || !updated.phone || !updated.email || !updated.vanModel || !updated.locationText){
+        showStatus(statusEl, "Please fill in all required fields.", "error");
+        return;
+      }
+      saveBtn.disabled = true; saveBtn.textContent = "Saving…";
+      try{
+        await saveRecord("owners:", updated);
+        showToast("Updated "+updated.name+"'s listing.");
+        editingOwnerId = null;
+        await renderAdmin();
+      }catch(e){
+        saveBtn.disabled = false; saveBtn.textContent = "Save changes";
+        showStatus(statusEl, "Something went wrong saving changes. Please try again.", "error");
+      }
+    });
+  });
 }
 
 /* ================= OPTIONAL: SERVICE WORKER (only works once hosted on a real https domain) ================= */
