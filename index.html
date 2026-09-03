@@ -481,7 +481,26 @@ document.getElementById("track-btn").addEventListener("click", async ()=>{
       return;
     }
     statusEl.classList.remove("show");
-    resultsEl.innerHTML = mine.map(b => `
+    resultsEl.innerHTML = mine.map(b => {
+      const isActive = b.status === "assigned" || b.status === "contacted";
+      let extBlock = "";
+      if (isActive){
+        if (b.renterExtensionRequest){
+          extBlock = `<div class="track-status-line">Extension to <b>${escapeHtml(b.renterExtensionRequest.newEndDate)}</b> requested — waiting for confirmation.</div>`;
+        } else {
+          extBlock = `
+          <div class="track-status-line">
+            Need more time? <button type="button" class="btn secondary small ext-toggle-btn" data-booking="${b.id}" style="margin-left:6px;">Request extension</button>
+            <div class="ext-form" id="ext-form-${b.id}" style="display:none;margin-top:10px;">
+              <div class="loc-row">
+                <input type="date" class="ext-date-input" data-booking="${b.id}" min="${b.endDate}">
+                <button type="button" class="btn amber small ext-submit-btn" data-booking="${b.id}">Send request</button>
+              </div>
+            </div>
+          </div>`;
+        }
+      }
+      return `
       <div class="track-card ${b.status}">
         <div class="track-top">
           <span class="track-title">${escapeHtml(b.vanType)} — ${b.startDate} → ${b.endDate}</span>
@@ -489,7 +508,34 @@ document.getElementById("track-btn").addEventListener("click", async ()=>{
         </div>
         <div class="track-meta">Pickup: ${escapeHtml(b.pickupText)}</div>
         <div class="track-status-line">${STATUS_COPY[b.status] || ""}</div>
-      </div>`).join("");
+        ${extBlock}
+      </div>`;
+    }).join("");
+
+    resultsEl.querySelectorAll(".ext-toggle-btn").forEach(tbtn=>{
+      tbtn.addEventListener("click", ()=>{
+        const form = document.getElementById("ext-form-"+tbtn.dataset.booking);
+        form.style.display = form.style.display === "none" ? "block" : "none";
+      });
+    });
+    resultsEl.querySelectorAll(".ext-submit-btn").forEach(sbtn=>{
+      sbtn.addEventListener("click", async ()=>{
+        const bookingId = sbtn.dataset.booking;
+        const dateInput = resultsEl.querySelector(`.ext-date-input[data-booking="${bookingId}"]`);
+        const newEndDate = dateInput.value;
+        if (!newEndDate){ return; }
+        const booking = mine.find(b=>b.id===bookingId);
+        if (!booking) return;
+        booking.renterExtensionRequest = { newEndDate, requestedAt: Date.now() };
+        sbtn.disabled = true; sbtn.textContent = "Sending…";
+        try{
+          await saveRecord("bookings:", booking);
+          document.getElementById("track-btn").click();
+        }catch(e){
+          sbtn.disabled = false; sbtn.textContent = "Send request";
+        }
+      });
+    });
   }catch(err){
     showStatus(statusEl, "Something went wrong checking your booking. Please try again.", "error");
   }finally{
