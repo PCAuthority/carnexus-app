@@ -107,6 +107,10 @@ input:focus,select:focus{outline:2px solid var(--amber);outline-offset:1px;borde
 .job-badge.assigned{background:var(--teal);color:#08302B;}
 .job-badge.declined{background:var(--err);color:#fff;}
 .job-badge.busy{background:var(--steel);color:#fff;}
+.request-banner{margin-top:10px;padding:10px 12px;border-radius:6px;background:#FFF3E0;border:1px solid var(--amber);font-size:0.85rem;}
+.request-banner .rb-actions{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;}
+.date-edit-row{display:flex;gap:8px;align-items:center;margin-top:10px;}
+.date-edit-row input{flex:1;font-size:0.85rem;padding:8px 10px;}
 .btn.danger{background:transparent;color:var(--err);border-color:var(--err);}
 .job-meta{font-size:0.83rem;color:var(--muted);margin-top:5px;}
 .job-note{font-size:0.83rem;color:var(--muted);margin-top:5px;font-style:italic;}
@@ -334,7 +338,23 @@ async function renderOwnerHome(isPoll){
     statBlock(mine.filter(b=>b.status==="fulfilled").length, "Completed");
 
   const listEl = document.getElementById("owner-job-list");
-  listEl.innerHTML = mine.length ? mine.map(b=>`
+  listEl.innerHTML = mine.length ? mine.map(b=>{
+    const isActive = b.status === "assigned" || b.status === "contacted";
+    const req = b.ownerRequest;
+    let requestBlock = "";
+    if (isActive){
+      if (req && req.type === "fulfilled"){
+        requestBlock = `<div class="job-meta">✅ You marked this as done — waiting for admin to confirm.</div>`;
+      } else if (req && req.type === "extend"){
+        requestBlock = `<div class="job-meta">🕐 Extension request sent — waiting for admin to confirm with the renter.</div>`;
+      } else {
+        requestBlock = `<div class="job-actions">
+          <button class="btn secondary small owner-req-btn" data-booking="${b.id}" data-type="fulfilled">Request: Mark fulfilled</button>
+          <button class="btn secondary small owner-req-btn" data-booking="${b.id}" data-type="extend">Request: Extend booking</button>
+        </div>`;
+      }
+    }
+    return `
     <div class="job-card ${b.status}">
       <div class="job-top">
         <span class="job-title">${escapeHtml(b.name)} — ${escapeHtml(b.vanType)}</span>
@@ -344,7 +364,25 @@ async function renderOwnerHome(isPoll){
       <div class="job-meta">🗓 ${b.startDate} → ${b.endDate}</div>
       <div class="job-meta">☎ ${escapeHtml(b.phone)} · ${escapeHtml(b.email)}</div>
       ${b.notes ? `<div class="job-note">"${escapeHtml(b.notes)}"</div>` : ""}
-    </div>`).join("") : '<div class="empty-state">No bookings assigned to you yet. New assignments will show up here.</div>';
+      ${requestBlock}
+    </div>`;
+  }).join("") : '<div class="empty-state">No bookings assigned to you yet. New assignments will show up here.</div>';
+
+  listEl.querySelectorAll(".owner-req-btn").forEach(btn=>{
+    btn.addEventListener("click", async ()=>{
+      const bookingId = btn.dataset.booking;
+      const type = btn.dataset.type;
+      const booking = mine.find(b=>b.id===bookingId);
+      if (!booking) return;
+      booking.ownerRequest = { type, requestedAt: Date.now() };
+      btn.disabled = true; btn.textContent = "Sending…";
+      try{
+        await saveRecord("bookings:", booking);
+        showToast(type === "fulfilled" ? "Sent: marked as done." : "Sent: extension requested.");
+        await renderOwnerHome();
+      }catch(e){ btn.disabled = false; btn.textContent = type === "fulfilled" ? "Request: Mark fulfilled" : "Request: Extend booking"; }
+    });
+  });
 }
 function statBlock(num,label){ return `<div class="stat"><div class="num">${num}</div><div class="lbl">${label}</div></div>`; }
 
@@ -396,6 +434,8 @@ document.querySelectorAll("#admin-filter-chips .chip").forEach(c=>{
   });
 });
 
+let adminSeenSignals = new Set();
+
 async function renderAdmin(isPoll){
   const [bookings, owners] = await Promise.all([getBookings(), getOwners()]);
   bookingsCache = bookings.sort((a,b)=>b.createdAt-a.createdAt);
@@ -404,8 +444,27 @@ async function renderAdmin(isPoll){
   if (isPoll){
     const fresh = bookingsCache.filter(b=>!adminSeenIds.has(b.id));
     fresh.forEach(b=> showToast("New booking request from "+b.name+"."));
+
+    bookingsCache.forEach(b=>{
+      if (b.renterExtensionRequest){
+        const sig = b.id+":ext:"+b.renterExtensionRequest.requestedAt;
+        if (!adminSeenSignals.has(sig)) showToast(b.name+" requested an extension to "+b.renterExtensionRequest.newEndDate+".");
+      }
+      if (b.ownerRequest){
+        const sig = b.id+":own:"+b.ownerRequest.requestedAt;
+        if (!adminSeenSignals.has(sig)){
+          showToast(b.ownerRequest.type === "fulfilled"
+            ? "Car owner marked "+b.name+"'s trip as done."
+            : "Car owner requested an extension for "+b.name+".");
+        }
+      }
+    });
   }
-  bookingsCache.forEach(b=>adminSeenIds.add(b.id));
+  bookingsCache.forEach(b=>{
+    adminSeenIds.add(b.id);
+    if (b.renterExtensionRequest) adminSeenSignals.add(b.id+":ext:"+b.renterExtensionRequest.requestedAt);
+    if (b.ownerRequest) adminSeenSignals.add(b.id+":own:"+b.ownerRequest.requestedAt);
+  });
 
   document.getElementById("admin-stats").innerHTML =
     statBlock(bookingsCache.length, "Total") +
@@ -460,6 +519,35 @@ function renderAdminJobList(){
         : `${escapeHtml(r.owner.name)} — ${escapeHtml(r.owner.vanModel)} (${fmtKm(r.d)})`;
       return `<option value="${r.owner.id}" ${b.assignedOwnerId===r.owner.id?"selected":""} ${isBusy?"disabled":""}>${label}</option>`;
     }).join("");
+
+    let requestBanner = "";
+    if (b.renterExtensionRequest){
+      requestBanner += `<div class="request-banner">
+        📩 Renter requested extending the return date to <b>${escapeHtml(b.renterExtensionRequest.newEndDate)}</b>.
+        <div class="rb-actions">
+          <button class="btn small approve-ext-btn">Approve extension</button>
+          <button class="btn ghost small dismiss-ext-btn">Dismiss</button>
+        </div>
+      </div>`;
+    }
+    if (b.ownerRequest && b.ownerRequest.type === "fulfilled"){
+      requestBanner += `<div class="request-banner">
+        🔔 The car owner marked this trip as done.
+        <div class="rb-actions">
+          <button class="btn small confirm-fulfilled-btn">Confirm fulfilled</button>
+          <button class="btn ghost small dismiss-owner-req-btn">Dismiss</button>
+        </div>
+      </div>`;
+    }
+    if (b.ownerRequest && b.ownerRequest.type === "extend"){
+      requestBanner += `<div class="request-banner">
+        🔔 The car owner is requesting an extension for this booking. Confirm new dates with the renter, then update the return date below.
+        <div class="rb-actions">
+          <button class="btn ghost small dismiss-owner-req-btn">Dismiss</button>
+        </div>
+      </div>`;
+    }
+
     return `
     <div class="job-card ${b.status}" data-booking="${b.id}">
       <div class="job-top">
@@ -471,6 +559,11 @@ function renderAdminJobList(){
       <div class="job-meta">☎ ${escapeHtml(b.phone)} · ${escapeHtml(b.email)}</div>
       ${b.notes ? `<div class="job-note">"${escapeHtml(b.notes)}"</div>` : ""}
       ${b.assignedOwnerName ? `<div class="job-meta"><b>Assigned to ${escapeHtml(b.assignedOwnerName)}</b></div>` : ""}
+      ${requestBanner}
+      <div class="date-edit-row">
+        <input type="date" class="date-edit-input" value="${b.endDate}">
+        <button class="btn secondary small date-save-btn">Update return date</button>
+      </div>
       <div class="assign-row">
         <select class="assign-select" ${ranked.length===0 ? "disabled":""}>
           <option value="">${ranked.length ? (b.assignedOwnerId ? "Transfer to another car…" : "Choose nearest car…") : "No cars registered yet"}</option>
@@ -551,6 +644,79 @@ function renderAdminJobList(){
         showToast("Deleted "+booking.name+"'s booking.");
         await renderAdmin();
       }catch(e){ btn.disabled = false; btn.textContent = "Delete"; }
+    });
+
+    const dateSaveBtn = card.querySelector(".date-save-btn");
+    if (dateSaveBtn) dateSaveBtn.addEventListener("click", async ()=>{
+      const booking = bookingsCache.find(b=>b.id===bookingId);
+      if (!booking) return;
+      const newDate = card.querySelector(".date-edit-input").value;
+      if (!newDate) return;
+      const oldDate = booking.endDate;
+      booking.endDate = newDate;
+      dateSaveBtn.disabled = true; dateSaveBtn.textContent = "Saving…";
+      try{
+        await saveRecord("bookings:", booking);
+        if (newDate !== oldDate){
+          showToast("Updated return date for "+booking.name+" to "+newDate+".");
+          sendStatusEmail(booking, "Booking updated", "Your return date has been updated to "+newDate+".");
+        }
+        await renderAdmin();
+      }catch(e){ dateSaveBtn.disabled = false; dateSaveBtn.textContent = "Update return date"; }
+    });
+
+    const approveExtBtn = card.querySelector(".approve-ext-btn");
+    if (approveExtBtn) approveExtBtn.addEventListener("click", async ()=>{
+      const booking = bookingsCache.find(b=>b.id===bookingId);
+      if (!booking || !booking.renterExtensionRequest) return;
+      const newDate = booking.renterExtensionRequest.newEndDate;
+      booking.endDate = newDate;
+      booking.renterExtensionRequest = null;
+      approveExtBtn.disabled = true; approveExtBtn.textContent = "Approving…";
+      try{
+        await saveRecord("bookings:", booking);
+        showToast("Approved extension for "+booking.name+" to "+newDate+".");
+        sendStatusEmail(booking, "Extension approved", "Your extension request has been approved. Your new return date is "+newDate+".");
+        await renderAdmin();
+      }catch(e){ approveExtBtn.disabled = false; approveExtBtn.textContent = "Approve extension"; }
+    });
+
+    const dismissExtBtn = card.querySelector(".dismiss-ext-btn");
+    if (dismissExtBtn) dismissExtBtn.addEventListener("click", async ()=>{
+      const booking = bookingsCache.find(b=>b.id===bookingId);
+      if (!booking) return;
+      booking.renterExtensionRequest = null;
+      dismissExtBtn.disabled = true;
+      try{
+        await saveRecord("bookings:", booking);
+        sendStatusEmail(booking, "Extension request declined", "We're unable to approve your extension request for this booking. Please reach out to us directly if you'd like to discuss options.");
+        await renderAdmin();
+      }catch(e){ dismissExtBtn.disabled = false; }
+    });
+
+    const confirmFulfilledBtn = card.querySelector(".confirm-fulfilled-btn");
+    if (confirmFulfilledBtn) confirmFulfilledBtn.addEventListener("click", async ()=>{
+      const booking = bookingsCache.find(b=>b.id===bookingId);
+      if (!booking) return;
+      booking.status = "fulfilled";
+      booking.ownerRequest = null;
+      confirmFulfilledBtn.disabled = true; confirmFulfilledBtn.textContent = "Confirming…";
+      try{
+        await saveRecord("bookings:", booking);
+        showToast("Confirmed "+booking.name+"'s trip as fulfilled.");
+        sendStatusEmail(booking, "Trip complete", "Your trip with CarNexus is complete. Thanks for booking with us!");
+        await renderAdmin();
+      }catch(e){ confirmFulfilledBtn.disabled = false; confirmFulfilledBtn.textContent = "Confirm fulfilled"; }
+    });
+
+    const dismissOwnerReqBtn = card.querySelector(".dismiss-owner-req-btn");
+    if (dismissOwnerReqBtn) dismissOwnerReqBtn.addEventListener("click", async ()=>{
+      const booking = bookingsCache.find(b=>b.id===bookingId);
+      if (!booking) return;
+      booking.ownerRequest = null;
+      dismissOwnerReqBtn.disabled = true;
+      try{ await saveRecord("bookings:", booking); await renderAdmin(); }
+      catch(e){ dismissOwnerReqBtn.disabled = false; }
     });
   });
 }
