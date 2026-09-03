@@ -420,6 +420,23 @@ bookingForm.addEventListener("submit", async (e)=>{
 });
 function escapeHtml(s){ return (s||"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
+async function sendOwnerEmail(owner, statusTitle, statusMessage){
+  if (!window.emailjs || typeof EMAILJS_PUBLIC_KEY === "undefined" || EMAILJS_PUBLIC_KEY.startsWith("PASTE_")) return false;
+  try{
+    await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+      to_email: owner.email,
+      to_name: owner.name,
+      status_title: statusTitle,
+      status_message: statusMessage,
+      car_type: owner.vanModel,
+      pickup: owner.locationText,
+      start_date: "-",
+      end_date: "-"
+    });
+    return true;
+  }catch(e){ console.error("EmailJS send failed:", e); return false; }
+}
+
 /* ---------------- OWNER SUBMIT ---------------- */
 ownerForm.addEventListener("submit", async (e)=>{
   e.preventDefault();
@@ -439,12 +456,14 @@ ownerForm.addEventListener("submit", async (e)=>{
     locationText: fd.get("locationText").trim(),
     lat: ownerForm.dataset.lat ? parseFloat(ownerForm.dataset.lat) : null,
     lng: ownerForm.dataset.lng ? parseFloat(ownerForm.dataset.lng) : null,
-    createdAt: Date.now()
+    createdAt: Date.now(),
+    status: "pending"
   };
   btn.disabled = true; btn.textContent = "Registering…";
   try{
     await saveRecord("owners:", owner);
-    showStatus(statusEl, "You're registered. Open the CarNexus Owner app and log in with this email or phone to see bookings assigned to you.", "success");
+    showStatus(statusEl, "You're registered and pending review. We'll notify you by email once your listing is approved.", "success");
+    sendOwnerEmail(owner, "Registration received", "Thanks for registering your car with CarNexus. Our team will review your details and let you know once you're approved and visible to renters.");
     ownerForm.reset();
     delete ownerForm.dataset.lat; delete ownerForm.dataset.lng;
     document.getElementById("owner-coord-note").textContent = "No precise coordinates yet — add them so our team can find you when relevant.";
