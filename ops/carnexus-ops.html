@@ -322,7 +322,11 @@ document.querySelectorAll(".role-card").forEach(c=>{
 });
 
 /* ================= OWNER FLOW ================= */
-let currentOwnerRecord = null;
+// A person can have more than one vehicle registered under the same email/phone.
+// We keep the login key (not a single record) and re-match against it on every render,
+// so bookings for ALL of that person's vehicles show up — and a newly-added second vehicle
+// shows up automatically too, without needing to log out and back in.
+let currentOwnerLoginKey = null;
 let ownerSeenIds = new Set();
 let ownerPollTimer = null;
 
@@ -331,9 +335,9 @@ document.getElementById("owner-login-btn").addEventListener("click", async ()=>{
   const statusEl = document.getElementById("owner-login-status");
   if (!input){ showStatus(statusEl, "Enter the email or phone you registered with.", "error"); return; }
   const owners = await getOwners();
-  const match = owners.find(o => o.email.toLowerCase()===input || o.phone.toLowerCase()===input);
-  if (!match){ showStatus(statusEl, "No car owner found with that email or phone. Register on the CarNexus site first.", "error"); return; }
-  currentOwnerRecord = match;
+  const matches = owners.filter(o => o.email.toLowerCase()===input || o.phone.toLowerCase()===input);
+  if (!matches.length){ showStatus(statusEl, "No car owner found with that email or phone. Register on the CarNexus site first.", "error"); return; }
+  currentOwnerLoginKey = input;
   statusEl.classList.remove("show");
   requestNotifyPermission();
   document.getElementById("nav-admin").classList.add("hidden");
@@ -346,7 +350,7 @@ document.getElementById("owner-login-btn").addEventListener("click", async ()=>{
 
 document.getElementById("owner-refresh-btn").addEventListener("click", ()=>renderOwnerHome());
 document.getElementById("owner-logout-btn").addEventListener("click", ()=>{
-  currentOwnerRecord = null; ownerSeenIds = new Set();
+  currentOwnerLoginKey = null; ownerSeenIds = new Set();
   if (ownerPollTimer) clearInterval(ownerPollTimer);
   document.getElementById("nav-owner").classList.add("hidden");
   document.getElementById("owner-login-input").value = "";
@@ -354,25 +358,30 @@ document.getElementById("owner-logout-btn").addEventListener("click", ()=>{
 });
 
 async function renderOwnerHome(isPoll){
-  if (!currentOwnerRecord) return;
+  if (!currentOwnerLoginKey) return;
 
-  // Refresh our own record in case status changed (e.g. just got approved) while this screen is open.
   const owners = await getOwners();
-  const freshSelf = owners.find(o=>o.id===currentOwnerRecord.id);
-  if (freshSelf) currentOwnerRecord = freshSelf;
+  const myVehicles = owners.filter(o => o.email.toLowerCase()===currentOwnerLoginKey || o.phone.toLowerCase()===currentOwnerLoginKey);
+  if (!myVehicles.length) return; // shouldn't happen post-login, but guards against a deleted record
+  const myVehicleIds = new Set(myVehicles.map(v=>v.id));
+  const vehicleById = {};
+  myVehicles.forEach(v => vehicleById[v.id] = v);
+  const showVehicleTag = myVehicles.length > 1; // only bother labeling which car once there's more than one
 
   const bannerEl = document.getElementById("owner-status-banner");
-  const status = currentOwnerRecord.status || "approved";
-  if (status === "pending"){
-    bannerEl.innerHTML = `<div class="status-banner pending">🕐 Your registration is pending admin approval. You'll get an email once you're approved and visible for new bookings.</div>`;
-  } else if (status === "rejected"){
-    bannerEl.innerHTML = `<div class="status-banner rejected">Your registration wasn't approved. Please contact us if you'd like more information.</div>`;
+  const pendingCount = myVehicles.filter(v => (v.status||"approved") === "pending").length;
+  const rejectedCount = myVehicles.filter(v => v.status === "rejected").length;
+  if (pendingCount || rejectedCount){
+    const parts = [];
+    if (pendingCount) parts.push(`🕐 ${pendingCount} vehicle${pendingCount>1?'s':''} pending admin approval.`);
+    if (rejectedCount) parts.push(`${rejectedCount} vehicle${rejectedCount>1?'s were':' was'} not approved — contact us for details.`);
+    bannerEl.innerHTML = `<div class="status-banner ${rejectedCount?'rejected':'pending'}">${parts.join(" ")}</div>`;
   } else {
     bannerEl.innerHTML = "";
   }
 
   const bookings = await getBookings();
-  const mine = bookings.filter(b => b.assignedOwnerId === currentOwnerRecord.id)
+  const mine = bookings.filter(b => myVehicleIds.has(b.assignedOwnerId))
                         .sort((a,b)=>b.createdAt-a.createdAt);
 
   if (isPoll){
@@ -408,6 +417,7 @@ async function renderOwnerHome(isPoll){
         <span class="job-title">${escapeHtml(b.name)} — ${escapeHtml(b.vanType)}</span>
         <span class="job-badge ${b.status}">${b.status}</span>
       </div>
+      ${showVehicleTag && vehicleById[b.assignedOwnerId] ? `<div class="job-meta">🚗 Car: ${escapeHtml(vehicleById[b.assignedOwnerId].vanModel)}</div>` : ""}
       <div class="job-meta">${b.rentalType === "with-driver" ? "🧑\u200d✈️ With driver" : "🔑 Self-drive"}</div>
       <div class="job-meta">📍 ${escapeHtml(b.pickupText)}</div>
       <div class="job-meta">🗓 ${b.startDate} → ${b.endDate}</div>
