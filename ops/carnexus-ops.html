@@ -328,6 +328,7 @@ document.querySelectorAll(".role-card").forEach(c=>{
 // shows up automatically too, without needing to log out and back in.
 let currentOwnerLoginKey = null;
 let ownerSeenIds = new Set();
+let ownerPrevActiveIds = new Set();
 let ownerPollTimer = null;
 
 document.getElementById("owner-login-btn").addEventListener("click", async ()=>{
@@ -350,7 +351,7 @@ document.getElementById("owner-login-btn").addEventListener("click", async ()=>{
 
 document.getElementById("owner-refresh-btn").addEventListener("click", ()=>renderOwnerHome());
 document.getElementById("owner-logout-btn").addEventListener("click", ()=>{
-  currentOwnerLoginKey = null; ownerSeenIds = new Set();
+  currentOwnerLoginKey = null; ownerSeenIds = new Set(); ownerPrevActiveIds = new Set();
   if (ownerPollTimer) clearInterval(ownerPollTimer);
   document.getElementById("nav-owner").classList.add("hidden");
   document.getElementById("owner-login-input").value = "";
@@ -383,12 +384,23 @@ async function renderOwnerHome(isPoll){
   const bookings = await getBookings();
   const mine = bookings.filter(b => myVehicleIds.has(b.assignedOwnerId))
                         .sort((a,b)=>b.createdAt-a.createdAt);
+  const mineActiveIds = new Set(mine.filter(b=>b.status==="assigned"||b.status==="contacted").map(b=>b.id));
 
   if (isPoll){
     const fresh = mine.filter(b=>!ownerSeenIds.has(b.id));
     fresh.forEach(b=> showToast("New booking assigned to you: "+b.name+" — "+b.startDate+" to "+b.endDate));
+
+    // Anything that was active and ours last check, but isn't ours anymore — most likely transferred away.
+    ownerPrevActiveIds.forEach(id=>{
+      if (mineActiveIds.has(id)) return;
+      const stillExists = bookings.find(b=>b.id===id);
+      if (stillExists && !myVehicleIds.has(stillExists.assignedOwnerId) && (stillExists.status==="assigned"||stillExists.status==="contacted")){
+        showToast("Your booking with "+stillExists.name+" was reassigned to another vehicle.");
+      }
+    });
   }
   mine.forEach(b=>ownerSeenIds.add(b.id));
+  ownerPrevActiveIds = mineActiveIds;
 
   document.getElementById("owner-stats").innerHTML =
     statBlock(mine.length, "Assigned to you") +
@@ -680,7 +692,12 @@ function renderAdminJobList(){
         showToast(owner.name+" is already on a booking with "+busyMap[ownerId]+" — mark that one fulfilled first.");
         return;
       }
-      const wasAssigned = !!booking.assignedOwnerId;
+      const previousOwnerId = booking.assignedOwnerId;
+      const wasAssigned = !!previousOwnerId;
+      const isActualTransfer = wasAssigned && previousOwnerId !== owner.id;
+      if (wasAssigned && !isActualTransfer) return; // re-picking the same car they already have — nothing to do
+      const previousOwner = isActualTransfer ? ownersCache.find(o=>o.id===previousOwnerId) : null;
+
       booking.assignedOwnerId = owner.id;
       booking.assignedOwnerName = owner.name;
       booking.status = "assigned";
@@ -688,13 +705,36 @@ function renderAdminJobList(){
       btn.disabled = true; btn.textContent = wasAssigned ? "Transferring…" : "Assigning…";
       try{
         await saveRecord("bookings:", booking);
-        showToast((wasAssigned ? "Transferred " : "Assigned ")+booking.name+"'s booking to "+owner.name+".");
+        showToast((isActualTransfer ? "Transferred " : "Assigned ")+booking.name+"'s booking to "+owner.name+".");
+
+        // Renter gets told either way.
         sendStatusEmail(booking,
-          wasAssigned ? "Car updated" : "Booking confirmed",
-          wasAssigned
+          isActualTransfer ? "Car updated" : "Booking confirmed",
+          isActualTransfer
             ? "Your booking has been updated with a new car assignment. Our team will confirm pickup details with you."
             : "Good news — a car has been assigned to your booking. Our team will reach out shortly to confirm pickup details."
         );
+
+        // Same person, different one of their own vehicles? Send one combined email instead of
+        // "you're free" + "you're assigned" landing in the same inbox back to back.
+        const samePerson = previousOwner &&
+          (previousOwner.email.toLowerCase() === owner.email.toLowerCase() || previousOwner.phone === owner.phone);
+
+        if (isActualTransfer && samePerson){
+          sendOwnerEmail(owner, "Booking moved to another of your vehicles",
+            "The booking for "+booking.name+" ("+booking.startDate+" to "+booking.endDate+") has been moved from your "+previousOwner.vanModel+" to your "+owner.vanModel+".");
+        } else {
+          // The car owner picking up the job gets told, whether this is a fresh assign or a transfer to them.
+          sendOwnerEmail(owner, "New booking assigned",
+            "You've been assigned a new booking: "+booking.name+" ("+booking.vanType+"), pickup at "+booking.pickupText+", "+booking.startDate+" to "+booking.endDate+".");
+
+          // The owner losing the job on a transfer gets told too, so they know they're free again.
+          if (isActualTransfer && previousOwner){
+            sendOwnerEmail(previousOwner, "Booking reassigned",
+              "The booking for "+booking.name+" ("+booking.startDate+" to "+booking.endDate+") has been reassigned to another vehicle. You're free for new bookings.");
+          }
+        }
+
         await renderAdmin();
       }catch(e){ btn.disabled = false; btn.textContent = wasAssigned ? "Transfer" : "Assign"; }
     });
