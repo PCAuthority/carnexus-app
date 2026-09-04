@@ -219,6 +219,12 @@ footer .note{background:var(--paper-dim);border-radius:5px;padding:14px 18px;mar
               <option>Luxury / premium</option>
             </select>
           </div>
+          <div class="field"><label>Rental type</label>
+            <select name="rentalType">
+              <option value="self-drive">Self-drive</option>
+              <option value="with-driver">With driver</option>
+            </select>
+          </div>
           <div class="field full">
             <label>Pickup location</label>
             <div class="loc-row">
@@ -265,6 +271,17 @@ footer .note{background:var(--paper-dim);border-radius:5px;padding:14px 18px;mar
           <div class="field"><label>Seats / capacity</label><input required type="number" min="1" name="seats" placeholder="5"></div>
           <div class="field"><label>Daily rate (₱)</label><input required type="number" min="0" name="rate" placeholder="2500"></div>
           <div class="field"><label>Usual service radius (km)</label><input type="number" min="1" name="radius" value="80" placeholder="80"></div>
+          <div class="field full">
+            <label>Rental options offered</label>
+            <div style="display:flex;gap:20px;margin-top:4px;">
+              <label style="display:flex;align-items:center;gap:7px;font-weight:400;font-size:0.92rem;color:var(--text);">
+                <input type="checkbox" name="offerSelfDrive" checked style="width:auto;"> Self-drive
+              </label>
+              <label style="display:flex;align-items:center;gap:7px;font-weight:400;font-size:0.92rem;color:var(--text);">
+                <input type="checkbox" name="offerWithDriver" style="width:auto;"> With driver
+              </label>
+            </div>
+          </div>
           <div class="field full">
             <label>Where is the car usually based?</label>
             <div class="loc-row">
@@ -386,6 +403,7 @@ bookingForm.addEventListener("submit", async (e)=>{
     phone: fd.get("phone").trim(),
     email: fd.get("email").trim(),
     vanType: fd.get("carType"), // kept field name for storage compatibility
+    rentalType: fd.get("rentalType"), // "self-drive" or "with-driver"
     pickupText: fd.get("pickupText").trim(),
     lat: bookingForm.dataset.lat ? parseFloat(bookingForm.dataset.lat) : null,
     lng: bookingForm.dataset.lng ? parseFloat(bookingForm.dataset.lng) : null,
@@ -443,6 +461,13 @@ ownerForm.addEventListener("submit", async (e)=>{
   const btn = document.getElementById("owner-submit-btn");
   const statusEl = document.getElementById("owner-status");
   const fd = new FormData(ownerForm);
+  const rentalOptions = [];
+  if (fd.get("offerSelfDrive")) rentalOptions.push("self-drive");
+  if (fd.get("offerWithDriver")) rentalOptions.push("with-driver");
+  if (!rentalOptions.length){
+    showStatus(statusEl, "Select at least one rental option — self-drive, with driver, or both.", "error");
+    return;
+  }
   const owner = {
     id: uid(),
     name: fd.get("name").trim(),
@@ -450,6 +475,7 @@ ownerForm.addEventListener("submit", async (e)=>{
     email: fd.get("email").trim(),
     vanModel: fd.get("vanModel").trim(),
     vanType: fd.get("vanType"),
+    rentalOptions: rentalOptions,
     seats: parseInt(fd.get("seats"),10) || null,
     rate: parseFloat(fd.get("rate")) || null,
     radiusKm: parseFloat(fd.get("radius")) || 80,
@@ -526,6 +552,7 @@ document.getElementById("track-btn").addEventListener("click", async ()=>{
           <span class="track-badge ${b.status}">${b.status}</span>
         </div>
         <div class="track-meta">Pickup: ${escapeHtml(b.pickupText)}</div>
+        <div class="track-meta">${b.rentalType === "with-driver" ? "With driver" : "Self-drive"}</div>
         <div class="track-status-line">${STATUS_COPY[b.status] || ""}</div>
         ${extBlock}
       </div>`;
